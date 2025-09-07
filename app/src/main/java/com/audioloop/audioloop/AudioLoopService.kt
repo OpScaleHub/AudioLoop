@@ -27,6 +27,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class AudioLoopService : Service() {
 
@@ -34,32 +36,37 @@ class AudioLoopService : Service() {
     private var notificationManager: NotificationManager? = null
     private lateinit var audioManager: AudioManager
 
-    // App Audio Capture & Playback
-    private var appAudioRecord: AudioRecord? = null // Renamed for clarity
-    private var audioTrack: AudioTrack? = null
-    private var appAudioCaptureThread: Thread? = null // Renamed for clarity
-    @Volatile private var isCapturingAppAudio: Boolean = false // Renamed for clarity
+    // App Audio Capture
+    private var appAudioRecord: AudioRecord? = null
+    @Volatile private var isCapturingAppAudio: Boolean = false
 
     // Microphone Audio Capture
     private var micAudioRecord: AudioRecord? = null
-    private var micCaptureThread: Thread? = null
-    @Volatile private var isCapturingMicAudio: Boolean = false
+    @Volatile private var isCapturingMicAudio: Boolean = false // Still useful to track if mic is independently started/stopped
+
+    // Playback (of mixed audio)
+    private var audioTrack: AudioTrack? = null
+    private var audioProcessingThread: Thread? = null // Renamed from appAudioCaptureThread
 
     @Volatile private var hasAudioFocus: Boolean = false
     private var audioFocusRequest: AudioFocusRequest? = null
     private lateinit var onAudioFocusChangeListener: AudioManager.OnAudioFocusChangeListener
 
-    // Common Audio Parameters (can be adjusted)
+    // Common Audio Parameters
     private val SAMPLE_RATE = 44100
     private val AUDIO_FORMAT_ENCODING = AudioFormat.ENCODING_PCM_16BIT
 
     // App Audio Specific
-    private val APP_CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_STEREO
-    private val PLAYBACK_CHANNEL_CONFIG_OUT = AudioFormat.CHANNEL_OUT_STEREO
+    private val APP_CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_STEREO // Stereo
+    private val APP_BYTES_PER_FRAME = 4 // Stereo, 16-bit PCM (2 bytes/sample * 2 channels)
 
     // Mic Audio Specific
-    private val MIC_CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_MONO
+    private val MIC_CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_MONO // Mono
+    private val MIC_BYTES_PER_FRAME = 2 // Mono, 16-bit PCM (2 bytes/sample * 1 channel)
 
+    // Playback Specific
+    private val PLAYBACK_CHANNEL_CONFIG_OUT = AudioFormat.CHANNEL_OUT_STEREO // Stereo output
+    private val PLAYBACK_BYTES_PER_FRAME = 4 // Stereo, 16-bit PCM
 
     private val playbackAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -80,32 +87,32 @@ class AudioLoopService : Service() {
         onAudioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
             when (focusChange) {
                 AudioManager.AUDIOFOCUS_GAIN -> {
-                    Log.d(TAG, "AUDIOFOCUS_GAIN: Focus gained.")
+                    Log.d(TAG, "AUDIOFOCUS_GAIN.")
                     hasAudioFocus = true
-                    if (isCapturingAppAudio && audioTrack?.playState == AudioTrack.PLAYSTATE_PAUSED) {
+                    if ((isCapturingAppAudio || isCapturingMicAudio) && audioTrack?.playState == AudioTrack.PLAYSTATE_PAUSED) {
                         audioTrack?.play()
-                        Log.d(TAG, "Resuming playback due to focus gain.")
+                        Log.d(TAG, "Resuming playback.")
                     }
                 }
                 AudioManager.AUDIOFOCUS_LOSS -> {
-                    Log.d(TAG, "AUDIOFOCUS_LOSS: Focus lost permanently. Stopping loopback.")
+                    Log.d(TAG, "AUDIOFOCUS_LOSS.")
                     hasAudioFocus = false
                     clearProjectionAndAudioInstance()
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                    Log.d(TAG, "AUDIOFOCUS_LOSS_TRANSIENT: Focus lost temporarily.")
+                    Log.d(TAG, "AUDIOFOCUS_LOSS_TRANSIENT.")
                     hasAudioFocus = false
                     if (audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
                         audioTrack?.pause()
-                        Log.d(TAG, "Paused playback due to transient focus loss.")
+                        Log.d(TAG, "Paused playback.")
                     }
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                    Log.d(TAG, "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: Ducking not implemented, pausing.")
+                    Log.d(TAG, "AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK, pausing.")
                     hasAudioFocus = false
                     if (audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
                         audioTrack?.pause()
-                        Log.d(TAG, "Paused playback due to transient focus loss (duck).")
+                        Log.d(TAG, "Paused playback (duck).")
                     }
                 }
                 else -> Log.d(TAG, "Unknown audio focus change: $focusChange")
@@ -129,11 +136,11 @@ class AudioLoopService : Service() {
             )
         }
         return if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            Log.d(TAG, "Audio focus request granted.")
+            Log.d(TAG, "Audio focus granted.")
             hasAudioFocus = true
             true
         } else {
-            Log.e(TAG, "Audio focus request failed. Result: $result")
+            Log.e(TAG, "Audio focus request failed: $result")
             hasAudioFocus = false
             false
         }
@@ -153,275 +160,242 @@ class AudioLoopService : Service() {
     }
 
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    private fun startLoopbackAudio() {
-        Log.d(TAG, "Attempting to start loopback audio operations...")
+    private fun startAudioProcessing() {
+        Log.d(TAG, "Attempting to start audio processing...")
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "RECORD_AUDIO permission not granted.")
             return
         }
-        if (currentMediaProjection == null) {
-            Log.e(TAG, "MediaProjection is not available.")
+        if (currentMediaProjection == null && isCapturingAppAudio) { // Check only if app audio is intended
+            Log.e(TAG, "MediaProjection is not available for app audio.")
             return
         }
-        if (isCapturingAppAudio || isCapturingMicAudio) { // Check both flags
-            Log.w(TAG, "Audio capture is already in progress.")
+        if (audioProcessingThread?.isAlive == true) {
+            Log.w(TAG, "Audio processing thread already running.")
             return
         }
         if (!requestAudioFocus()) {
-            Log.e(TAG, "Failed to obtain audio focus. Cannot start loopback.")
+            Log.e(TAG, "Failed to obtain audio focus.")
             return
         }
 
-        // Start App Audio Capture and Playback
-        startAppAudioCaptureAndPlayback()
+        var appRecordOk = false
+        var micRecordOk = false
+        var audioTrackOk = false
 
-        // Start Microphone Audio Capture
-        startMicAudioCapture()
-    }
-
-    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    private fun startAppAudioCaptureAndPlayback() {
-        // Configure App AudioRecord
-        val recordConfig = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!)
-            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-            .addMatchingUsage(AudioAttributes.USAGE_GAME)
-            .build()
-        val recordAudioFormat = AudioFormat.Builder()
-            .setEncoding(AUDIO_FORMAT_ENCODING)
-            .setSampleRate(SAMPLE_RATE)
-            .setChannelMask(APP_CHANNEL_CONFIG_IN)
-            .build()
-        val appRecordMinBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, APP_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING)
-        if (appRecordMinBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-            Log.e(TAG, "Invalid audio parameters for App AudioRecord.")
-            abandonAudioFocus() // Clean up focus if setup fails
-            return
+        // 1. Setup App AudioRecord (if projection exists)
+        var appRecordBufferSizeInBytes = 0
+        if (currentMediaProjection != null) {
+            val recordConfig = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!)
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME).build()
+            val recordAudioFormat = AudioFormat.Builder()
+                .setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(APP_CHANNEL_CONFIG_IN).build()
+            appRecordBufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, APP_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING) * 2
+            if (appRecordBufferSizeInBytes < AudioRecord.ERROR_BAD_VALUE * 2) { // Check for error
+                try {
+                    appAudioRecord = AudioRecord.Builder()
+                        .setAudioFormat(recordAudioFormat).setAudioPlaybackCaptureConfig(recordConfig)
+                        .setBufferSizeInBytes(appRecordBufferSizeInBytes).build()
+                    if (appAudioRecord?.state == AudioRecord.STATE_INITIALIZED) {
+                        appRecordOk = true
+                        Log.d(TAG, "App AudioRecord initialized. Buffer: $appRecordBufferSizeInBytes")
+                    } else { Log.e(TAG, "App AudioRecord failed to initialize state.") }
+                } catch (e: Exception) { Log.e(TAG, "Exception creating App AudioRecord", e) }
+            } else { Log.e(TAG, "Invalid appRecordMinBufferSize") }
+        } else {
+            Log.d(TAG, "No MediaProjection, skipping App AudioRecord setup.")
+            appRecordOk = true // No app audio to capture, so it's "ok" in terms of proceeding
         }
-        val appRecordBufferSizeInBytes = appRecordMinBufferSize * 2
 
-        try {
-            appAudioRecord = AudioRecord.Builder()
-                .setAudioFormat(recordAudioFormat)
-                .setAudioPlaybackCaptureConfig(recordConfig)
-                .setBufferSizeInBytes(appRecordBufferSizeInBytes)
-                .build()
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception creating App AudioRecord: ${e.message}", e)
+
+        // 2. Setup Mic AudioRecord
+        val micRecordBufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, MIC_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING) * 2
+        if (micRecordBufferSizeInBytes < AudioRecord.ERROR_BAD_VALUE * 2) {
+             try {
+                micAudioRecord = AudioRecord.Builder()
+                    .setAudioSource(MediaRecorder.AudioSource.MIC)
+                    .setAudioFormat(AudioFormat.Builder().setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(MIC_CHANNEL_CONFIG_IN).build())
+                    .setBufferSizeInBytes(micRecordBufferSizeInBytes).build()
+                if (micAudioRecord?.state == AudioRecord.STATE_INITIALIZED) {
+                    micRecordOk = true
+                    Log.d(TAG, "Mic AudioRecord initialized. Buffer: $micRecordBufferSizeInBytes")
+                } else { Log.e(TAG, "Mic AudioRecord failed to initialize state.") }
+            } catch (e: Exception) { Log.e(TAG, "Exception creating Mic AudioRecord", e) }
+        } else { Log.e(TAG, "Invalid micRecordMinBufferSize") }
+
+
+        // 3. Setup AudioTrack (for playback of mixed audio)
+        val trackBufferSizeInBytes = AudioTrack.getMinBufferSize(SAMPLE_RATE, PLAYBACK_CHANNEL_CONFIG_OUT, AUDIO_FORMAT_ENCODING) * 2
+        if (trackBufferSizeInBytes < AudioTrack.ERROR_BAD_VALUE * 2) {
+            try {
+                audioTrack = AudioTrack.Builder()
+                    .setAudioAttributes(playbackAttributes)
+                    .setAudioFormat(AudioFormat.Builder().setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(PLAYBACK_CHANNEL_CONFIG_OUT).build())
+                    .setBufferSizeInBytes(trackBufferSizeInBytes).setTransferMode(AudioTrack.MODE_STREAM).build()
+                if (audioTrack?.state == AudioTrack.STATE_INITIALIZED) {
+                    audioTrackOk = true
+                    Log.d(TAG, "AudioTrack initialized. Buffer: $trackBufferSizeInBytes")
+                } else { Log.e(TAG, "AudioTrack failed to initialize state.") }
+            } catch (e: Exception) { Log.e(TAG, "Exception creating AudioTrack", e) }
+        } else { Log.e(TAG, "Invalid trackMinBufferSize") }
+
+
+        if (! ( (appRecordOk || currentMediaProjection == null) && micRecordOk && audioTrackOk) ) {
+            Log.e(TAG, "Audio processing setup failed. Cleaning up. AppRec: $appRecordOk, MicRec: $micRecordOk, Track: $audioTrackOk")
+            appAudioRecord?.release(); appAudioRecord = null
+            micAudioRecord?.release(); micAudioRecord = null
+            audioTrack?.release(); audioTrack = null
             abandonAudioFocus()
             return
         }
-        if (appAudioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "App AudioRecord failed to initialize.")
-            appAudioRecord?.release()
-            appAudioRecord = null
-            abandonAudioFocus()
-            return
-        }
-        Log.d(TAG, "App AudioRecord initialized.")
 
-        // Configure AudioTrack for playback
-        val trackMinBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, PLAYBACK_CHANNEL_CONFIG_OUT, AUDIO_FORMAT_ENCODING)
-        if (trackMinBufferSize == AudioTrack.ERROR_BAD_VALUE) {
-            Log.e(TAG, "Invalid audio parameters for AudioTrack.")
-            appAudioRecord?.release()
-            appAudioRecord = null
-            abandonAudioFocus()
-            return
-        }
-        val trackBufferSizeInBytes = trackMinBufferSize * 2
-        try {
-            audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(playbackAttributes)
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AUDIO_FORMAT_ENCODING)
-                        .setSampleRate(SAMPLE_RATE)
-                        .setChannelMask(PLAYBACK_CHANNEL_CONFIG_OUT)
-                        .build()
-                )
-                .setBufferSizeInBytes(trackBufferSizeInBytes)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception creating AudioTrack: ${e.message}", e)
-            appAudioRecord?.release()
-            appAudioRecord = null
-            abandonAudioFocus()
-            return
-        }
-        if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioTrack failed to initialize.")
-            appAudioRecord?.release()
-            appAudioRecord = null
-            audioTrack?.release()
-            audioTrack = null
-            abandonAudioFocus()
-            return
-        }
-        Log.d(TAG, "AudioTrack initialized.")
+        // Start recording/playback
+        isCapturingAppAudio = appAudioRecord != null // Only true if appAudioRecord was successfully initialized
+        isCapturingMicAudio = true // Assume mic is intended if setup was ok
 
-        isCapturingAppAudio = true
-        appAudioRecord?.startRecording()
-        audioTrack?.play()
-        Log.d(TAG, "App AudioRecord and AudioTrack started.")
-
-        appAudioCaptureThread = Thread {
-            val audioBuffer = ByteArray(appRecordBufferSizeInBytes)
-            while (isCapturingAppAudio && hasAudioFocus &&
-                   appAudioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING &&
-                   audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                val bytesRead = appAudioRecord?.read(audioBuffer, 0, audioBuffer.size)
-                if (bytesRead != null && bytesRead > 0) {
-                    audioTrack?.write(audioBuffer, 0, bytesRead)
-                } else if (bytesRead != null && bytesRead < 0) {
-                    Log.e(TAG, "Error reading app audio data: $bytesRead")
-                }
-            }
-            Log.d(TAG, "App audio capture/playback thread finished.")
-        }
-        appAudioCaptureThread?.name = "AppAudioPlaybackThread"
-        appAudioCaptureThread?.start()
-    }
-
-    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
-    private fun startMicAudioCapture() {
-        Log.d(TAG, "Attempting to start Mic audio capture...")
-        val micRecordMinBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, MIC_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING)
-        if (micRecordMinBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-            Log.e(TAG, "Invalid audio parameters for Mic AudioRecord.")
-            // Don't abandon focus here as app audio might still want it,
-            // but log failure. Or decide if mic failure is critical.
-            return
-        }
-        val micRecordBufferSizeInBytes = micRecordMinBufferSize * 2
-
-        try {
-            micAudioRecord = AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.MIC)
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AUDIO_FORMAT_ENCODING)
-                        .setSampleRate(SAMPLE_RATE)
-                        .setChannelMask(MIC_CHANNEL_CONFIG_IN)
-                        .build()
-                )
-                .setBufferSizeInBytes(micRecordBufferSizeInBytes)
-                .build()
-        } catch (e: Exception) {
-            Log.e(TAG, "Exception creating Mic AudioRecord: ${e.message}", e)
-            return
-        }
-
-        if (micAudioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "Mic AudioRecord failed to initialize.")
-            micAudioRecord?.release()
-            micAudioRecord = null
-            return
-        }
-        Log.d(TAG, "Mic AudioRecord initialized.")
-
-        isCapturingMicAudio = true
+        appAudioRecord?.startRecording() // Null safe
         micAudioRecord?.startRecording()
-        Log.d(TAG, "Mic AudioRecord started.")
+        audioTrack?.play()
+        Log.d(TAG, "Audio sources and track started.")
 
-        micCaptureThread = Thread {
-            val micAudioBuffer = ByteArray(micRecordBufferSizeInBytes)
-            while (isCapturingMicAudio && micAudioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                val bytesRead = micAudioRecord?.read(micAudioBuffer, 0, micAudioBuffer.size)
-                if (bytesRead != null && bytesRead > 0) {
-                    // TODO: Process micAudioBuffer - e.g., mix it or save it
-                    Log.v(TAG, "Mic audio data read: $bytesRead bytes") // Verbose, enable if needed
-                } else if (bytesRead != null && bytesRead < 0) {
-                    Log.e(TAG, "Error reading mic audio data: $bytesRead")
+        audioProcessingThread = Thread {
+            // Buffer for app audio (stereo). Size based on appAudioRecord buffer.
+            // If appAudioRecord is null, this buffer won't be used for app audio.
+            val appAudioByteBuffer = if (appAudioRecord != null) ByteBuffer.allocateDirect(appRecordBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
+            
+            // Buffer for mic audio (mono). Size based on micAudioRecord buffer.
+            val micAudioByteBuffer = ByteBuffer.allocateDirect(micRecordBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN)
+            
+            // Output buffer for AudioTrack (stereo). Size matches app audio buffer size,
+            // or mic buffer size x2 if no app audio, or a fixed reasonable size.
+            // For simplicity, let's make it based on the larger of the input read sizes, adapted for stereo.
+            val outputBufferSize = if (appAudioRecord != null) appRecordBufferSizeInBytes else micRecordBufferSizeInBytes * (PLAYBACK_BYTES_PER_FRAME / MIC_BYTES_PER_FRAME)
+            val mixedAudioByteBuffer = ByteBuffer.allocateDirect(outputBufferSize).order(ByteOrder.LITTLE_ENDIAN)
+
+            Log.d(TAG, "Audio processing thread started. Output buffer size: $outputBufferSize")
+
+            while ((isCapturingAppAudio || isCapturingMicAudio) && hasAudioFocus &&
+                   audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
+
+                var appBytesRead = 0
+                if (isCapturingAppAudio && appAudioRecord != null && appAudioByteBuffer != null) {
+                    appAudioByteBuffer.clear()
+                    appBytesRead = appAudioRecord!!.read(appAudioByteBuffer, appAudioByteBuffer.capacity())
+                    if (appBytesRead < 0) { Log.e(TAG, "App audio read error: $appBytesRead"); isCapturingAppAudio = false }
+                }
+
+                var micBytesRead = 0
+                if (isCapturingMicAudio && micAudioRecord != null) {
+                    micAudioByteBuffer.clear()
+                    micBytesRead = micAudioRecord!!.read(micAudioByteBuffer, micAudioByteBuffer.capacity())
+                    if (micBytesRead < 0) { Log.e(TAG, "Mic audio read error: $micBytesRead"); isCapturingMicAudio = false }
+                }
+
+                if (appBytesRead <= 0 && micBytesRead <= 0 && (isCapturingAppAudio || isCapturingMicAudio)) {
+                    // No data from any active source, maybe wait a bit to avoid busy loop if sources end abruptly
+                    try { Thread.sleep(10) } catch (e: InterruptedException) { break }
+                    continue
+                }
+                
+                mixedAudioByteBuffer.clear()
+                appAudioByteBuffer?.flip() // Prepare for reading
+                micAudioByteBuffer.flip()  // Prepare for reading
+
+                // Mixing logic
+                // Max samples to process is based on the output buffer's capacity in stereo frames
+                val maxOutputFrames = mixedAudioByteBuffer.capacity() / PLAYBACK_BYTES_PER_FRAME
+
+                for (i in 0 until maxOutputFrames) {
+                    val appLeftShort: Short = if (isCapturingAppAudio && appAudioByteBuffer != null && appAudioByteBuffer.remaining() >= 2) appAudioByteBuffer.short else 0
+                    val appRightShort: Short = if (isCapturingAppAudio && appAudioByteBuffer != null && appAudioByteBuffer.remaining() >= 2) appAudioByteBuffer.short else 0
+                    val micShort: Short = if (isCapturingMicAudio && micAudioByteBuffer.remaining() >= 2) micAudioByteBuffer.short else 0
+
+                    // Simple averaging mix.
+                    // To prevent excessive volume reduction if one source is silent,
+                    // a more adaptive mixing or gain control might be needed in a real app.
+                    var mixedLeft = 0
+                    var mixedRight = 0
+                    var activeSources = 0
+                    if (isCapturingAppAudio && appAudioRecord != null) {
+                        mixedLeft += appLeftShort.toInt()
+                        mixedRight += appRightShort.toInt()
+                        activeSources++
+                    }
+                    if (isCapturingMicAudio && micAudioRecord != null) {
+                        mixedLeft += micShort.toInt() // Add mono mic to left
+                        mixedRight += micShort.toInt()// Add mono mic to right
+                        activeSources++
+                    }
+
+                    if (activeSources > 0) {
+                        mixedLeft /= activeSources
+                        mixedRight /= activeSources
+                    }
+                    
+                    // Clamp to Short range
+                    mixedAudioByteBuffer.putShort(mixedLeft.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+                    mixedAudioByteBuffer.putShort(mixedRight.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+                }
+                
+                mixedAudioByteBuffer.flip() // Prepare for writing to AudioTrack
+                if (mixedAudioByteBuffer.remaining() > 0) {
+                    audioTrack?.write(mixedAudioByteBuffer, mixedAudioByteBuffer.remaining(), AudioTrack.WRITE_BLOCKING)
                 }
             }
-            Log.d(TAG, "Mic audio capture thread finished.")
+            Log.d(TAG, "Audio processing thread finished.")
         }
-        micCaptureThread?.name = "MicAudioCaptureThread"
-        micCaptureThread?.start()
+        audioProcessingThread?.name = "AudioProcessingThread"
+        audioProcessingThread?.start()
     }
 
 
-    private fun stopLoopbackAudio() {
-        Log.d(TAG, "Stopping all loopback audio operations...")
-
-        // Stop app audio capture and playback
-        val wasCapturingApp = isCapturingAppAudio
+    private fun stopAudioProcessing() {
+        Log.d(TAG, "Stopping all audio processing operations...")
+        val wasCapturing = isCapturingAppAudio || isCapturingMicAudio
         isCapturingAppAudio = false
-        if (appAudioCaptureThread?.isAlive == true) {
-            try { appAudioCaptureThread?.join(500) }
-            catch (e: InterruptedException) { Log.w(TAG, "Interrupted joining app audio thread", e); Thread.currentThread().interrupt() }
+        isCapturingMicAudio = false
+
+        if (audioProcessingThread?.isAlive == true) {
+            try { audioProcessingThread?.join(500) }
+            catch (e: InterruptedException) { Log.w(TAG, "Interrupted joining audio processing thread", e); Thread.currentThread().interrupt() }
         }
-        appAudioCaptureThread = null
+        audioProcessingThread = null
+
         appAudioRecord?.apply {
-            if (recordingState == AudioRecord.RECORDSTATE_RECORDING) try { stop() } catch (e: IllegalStateException) { Log.e(TAG, "App AudioRecord stop ex", e) }
+            if (recordingState == AudioRecord.RECORDSTATE_RECORDING) try { stop() } catch (e: IllegalStateException) { Log.e(TAG, "App AR stop ex", e) }
             release()
         }
         appAudioRecord = null
-        audioTrack?.apply {
-            if (playState == AudioTrack.PLAYSTATE_PLAYING || playState == AudioTrack.PLAYSTATE_PAUSED) try { pause(); flush(); stop() } catch (e: IllegalStateException) { Log.e(TAG, "AudioTrack stop ex", e) }
-            release()
-        }
-        audioTrack = null
-        Log.d(TAG, "App audio capture and playback stopped and released.")
-
-        // Stop microphone audio capture
-        stopMicAudioCapture()
-
-        if (wasCapturingApp || hasAudioFocus) { // If app audio was active or we thought we had focus
-            abandonAudioFocus()
-        }
-        Log.d(TAG, "All audio operations stopped, resources released, and audio focus abandoned (if held).")
-    }
-
-    private fun stopMicAudioCapture() {
-        if (!isCapturingMicAudio && micAudioRecord == null) return // Already stopped or never started
-
-        Log.d(TAG, "Stopping Mic audio capture...")
-        isCapturingMicAudio = false
-        if (micCaptureThread?.isAlive == true) {
-            try { micCaptureThread?.join(500) }
-            catch (e: InterruptedException) { Log.w(TAG, "Interrupted joining mic audio thread", e); Thread.currentThread().interrupt() }
-        }
-        micCaptureThread = null
         micAudioRecord?.apply {
-            if (recordingState == AudioRecord.RECORDSTATE_RECORDING) try { stop() } catch (e: IllegalStateException) { Log.e(TAG, "Mic AudioRecord stop ex", e) }
+            if (recordingState == AudioRecord.RECORDSTATE_RECORDING) try { stop() } catch (e: IllegalStateException) { Log.e(TAG, "Mic AR stop ex", e) }
             release()
         }
         micAudioRecord = null
-        Log.d(TAG, "Mic audio capture stopped and released.")
+        audioTrack?.apply {
+            if (playState == AudioTrack.PLAYSTATE_PLAYING || playState == AudioTrack.PLAYSTATE_PAUSED) try { pause(); flush(); stop() } catch (e: IllegalStateException) { Log.e(TAG, "AT stop ex", e) }
+            release()
+        }
+        audioTrack = null
+        
+        if (wasCapturing || hasAudioFocus) {
+            abandonAudioFocus()
+        }
+        Log.d(TAG, "All audio resources released and focus abandoned (if held).")
     }
 
-
     private fun startForegroundNotification() {
-        val channelId = "AudioLoopServiceChannel"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId, "Audio Loop Service", NotificationManager.IMPORTANCE_LOW
-            )
-            notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager?.createNotificationChannel(channel)
-        }
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("AudioLoop Service Active")
-            .setContentText(if (isProjectionSetup()) "Capturing selected app" else "Ready to select app")
-            .setSmallIcon(R.mipmap.ic_launcher).setOngoing(true).build()
-        try {
-            startForeground(SERVICE_NOTIFICATION_ID, notification)
-            Log.d(TAG, "Service started in foreground.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting foreground service", e)
-        }
+        // ... (as before)
+        val channelId = "AudioLoopServiceChannel"; if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { val channel = NotificationChannel(channelId, "Audio Loop Service", NotificationManager.IMPORTANCE_LOW); notificationManager = getSystemService(NotificationManager::class.java); notificationManager?.createNotificationChannel(channel) }; val notification: Notification = NotificationCompat.Builder(this, channelId).setContentTitle("AudioLoop Service Active").setContentText(if (isProjectionSetup()) "Capturing selected app" else "Ready to select app").setSmallIcon(R.mipmap.ic_launcher).setOngoing(true).build(); try { startForeground(SERVICE_NOTIFICATION_ID, notification); Log.d(TAG, "Service started in foreground.") } catch (e: Exception) { Log.e(TAG, "Error starting foreground service", e) }
     }
 
      private fun clearProjectionAndAudioInstance() {
         Log.d(TAG, "Clearing MediaProjection and stopping audio instance.")
-        stopLoopbackAudio() // Stops both app and mic audio, and handles focus
+        stopAudioProcessing() // This now stops all audio sources and playback
         currentMediaProjection?.unregisterCallback(mediaProjectionCallback)
         currentMediaProjection?.stop()
         currentMediaProjection = null
-        _isRunning.postValue(isProjectionSetup())
-        startForegroundNotification()
+        _isRunning.postValue(isProjectionSetup()) // Update LiveData
+        startForegroundNotification() // Update notification
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -430,12 +404,11 @@ class AudioLoopService : Service() {
         when (action) {
             ACTION_START_SERVICE -> {
                 Log.d(TAG, "ACTION_START_SERVICE received. Cleaning up.")
-                stopLoopbackAudio() // Clear previous state including mic
-                if (currentMediaProjection != null) {
-                    Log.d(TAG, "Clearing existing MediaProjection.")
+                stopAudioProcessing() // Clear previous state
+                if (currentMediaProjection != null) { // If projection exists from previous invalid state
+                    Log.d(TAG, "Clearing existing MediaProjection from invalid state.")
                     currentMediaProjection?.unregisterCallback(mediaProjectionCallback)
-                    currentMediaProjection?.stop()
-                    currentMediaProjection = null
+                    currentMediaProjection?.stop(); currentMediaProjection = null
                 }
                 _isRunning.postValue(true)
                 startForegroundNotification()
@@ -449,9 +422,10 @@ class AudioLoopService : Service() {
             ACTION_SETUP_PROJECTION -> {
                 if (_isRunning.value != true) {
                      Log.w(TAG, "ACTION_SETUP_PROJECTION: service not marked as running, starting implicitly.")
-                    _isRunning.postValue(true)
+                    _isRunning.postValue(true) // Ensure service is marked as running
                 }
-                startForegroundNotification()
+                startForegroundNotification() // Update notification
+
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
                 val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(EXTRA_DATA_INTENT, Intent::class.java)
@@ -459,31 +433,35 @@ class AudioLoopService : Service() {
 
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     try {
+                        // Stop any existing projection/audio before starting a new one
+                        stopAudioProcessing() // Stop current audio
+                        if (currentMediaProjection != null) { // Clear old projection
+                            currentMediaProjection?.unregisterCallback(mediaProjectionCallback)
+                            currentMediaProjection?.stop()
+                            currentMediaProjection = null
+                        }
+
                         val projection = mediaProjectionManager.getMediaProjection(resultCode, data)
                         if (projection != null) {
-                            currentMediaProjection = projection
+                            currentMediaProjection = projection // Assign new projection
                             currentMediaProjection?.registerCallback(mediaProjectionCallback, null)
                             Log.i(TAG, "MediaProjection obtained and stored.")
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                startLoopbackAudio() // This now starts app audio, playback, AND mic capture
-                            } else {
-                                Log.w(TAG, "AudioPlaybackCaptureConfiguration requires Android Q (API 29)+")
-                                clearProjectionAndAudioInstance()
-                            }
+                            // Now start audio processing which includes app audio (if projection is Q+) and mic
+                            startAudioProcessing()
                         } else {
                              Log.e(TAG, "getMediaProjection returned null despite RESULT_OK.")
-                             clearProjectionAndAudioInstance()
+                             clearProjectionAndAudioInstance() // Clean up if new projection is null
                         }
-                    } catch (e: Exception) { // Broader catch for projection setup
+                    } catch (e: Exception) {
                         Log.e(TAG, "Exception obtaining/setting up MediaProjection", e)
                         clearProjectionAndAudioInstance()
                     }
                 } else {
                     Log.w(TAG, "ACTION_SETUP_PROJECTION: Failed. ResultCode: $resultCode")
-                    clearProjectionAndAudioInstance()
+                    clearProjectionAndAudioInstance() // Clean up if projection setup fails
                 }
-                startForegroundNotification()
-                _isRunning.postValue(isProjectionSetup())
+                startForegroundNotification() // Update notification text
+                _isRunning.postValue(isProjectionSetup()) // Reflect current projection state
             }
         }
         return START_NOT_STICKY
@@ -508,6 +486,7 @@ class AudioLoopService : Service() {
 
     companion object {
         private const val TAG = "AudioLoopService"
+        // ... (other companion object members as before)
         private const val SERVICE_NOTIFICATION_ID = 12345
         const val ACTION_START_SERVICE = "com.audioloop.audioloop.ACTION_START_SERVICE"
         const val ACTION_STOP_SERVICE = "com.audioloop.audioloop.ACTION_STOP_SERVICE"
@@ -521,4 +500,5 @@ class AudioLoopService : Service() {
         fun isProjectionSetup(): Boolean = currentMediaProjection != null
     }
 }
+
 
