@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Exclude everything from cloud backup -->
+        <exclude domain="root" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <!-- Allow all default data for device transfer -->
+        <include domain="root" path="." />
+    </device-transfer>
+</data-extraction-rules>
