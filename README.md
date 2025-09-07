@@ -1,114 +1,53 @@
-# Android Audio Mixer: Project Specification
+# AudioLoop: Mix and Share Audio on Android
 
-## 1. Project Overview
+AudioLoop is an open-source Android application designed to capture, mix, and share audio between apps. Imagine playing a YouTube video's audio into a live Twitter Space or a conference call, right from your phone. This project aims to make that possible through an intuitive floating widget.
 
-### 1.1 Project Title
-AudioLoop: The Android Audio Mixer
+## The Goal
 
-### 1.2 Goal & Vision
-The goal is to create a user-friendly, open-source Android application that enables users to **stream audio from one app** as if it were their microphone, mixing it with their live voice. The app is for collaboration platforms like Twitter Spaces and Discord, letting users easily share media playback during a live call or broadcast.
+Our vision is a simple, movable, on-screen widget that lets you:
 
-### 1.3 Target Audience
-Android users who participate in live audio conversations, podcasts, or online collaboration sessions and want to share media content without a complex hardware setup.
+1.  **Capture App Audio:** Stream the sound output from an app like YouTube or a music player.
+2.  **Mix with Microphone:** Simultaneously capture your voice from the device's microphone.
+3.  **Share Everywhere:** Use this combined audio stream as your input in other applications, such as meeting apps (Zoom, Google Meet) or social audio platforms (Twitter Spaces).
 
----
+## How It Works & The Challenges
 
-## 2. Core Challenge & Technical Feasibility
+While the goal is simple, Android's security model presents a significant challenge.
 
-The project's main challenge is Android's strong security and privacy model, which prevents a standard app from directly "hijacking" another app's microphone input.
+### What's Achievable Now
 
--   **Audio Capture:** Android's **MediaProjection API** (Android 10+) lets an app capture audio playback from other applications. This requires user consent and the source app must allow audio capture.
--   **Audio Mixing:** There is **no public API** to inject an audio stream into another app's microphone input.
--   **Real-Time Behavior:** The app must handle a complex, real-time audio signal chain, including internal audio capture, microphone input, and playback to a third-party app.
+*   **App Audio Capture:** We can successfully capture the audio output from other applications.
+*   **Microphone Input:** We can add functionality to record from the microphone at the same time.
+*   **Audio Mixing:** The captured app audio and microphone audio can be mixed together into a single stream within AudioLoop.
 
-Due to these constraints, a direct "virtual microphone" is not feasible without a highly privileged, system-level app (e.g., a rooted device). The proposed solution uses a less direct but viable method.
+### The Core Challenge: Sharing the Mix
 
----
+Directly feeding this mixed audio into another app (like Twitter Spaces) as a "virtual microphone" is not possible for a standard Android app due to OS security and sandboxing limitations. Apps like Zoom or Twitter Spaces are hard-wired to use the physical microphone and don't allow selecting a different audio source.
 
-## 3. Proposed Solution: "The Loopback & Mixing" Method
+**The Workaround:**
+The only way for a standard app to achieve a similar result is indirectly:
+1.  AudioLoop plays the mixed audio (app sound + your voice) out loud through the phone's speaker.
+2.  The other app (e.g., Twitter Spaces) listens with the physical microphone and picks up the sound from the speaker.
 
-Instead of a virtual microphone, the app will capture the desired audio, mix it with the user's live voice from the microphone, and then **play the combined audio back through the device's loudspeaker**. The collaboration app's microphone will then pick up this mixed audio, achieving the desired effect.
+**Limitations of this approach:**
+*   **Echo/Feedback:** Can occur if you aren't using headphones for the meeting audio.
+*   **Reduced Quality:** The audio is being played and re-recorded, which degrades its quality.
 
-### 3.1 High-Level Technical Requirements
+## Project Status & Next Steps
 
--   **Android API Level:** Target **Android 10 (API level 29)** or higher to use the **AudioPlaybackCapture API**.
--   **Permissions:** Request `RECORD_AUDIO` and `FOREGROUND_SERVICE` permissions.
--   **Audio Capture:** Use `MediaProjection` to capture the audio stream.
--   **Audio Processing:** Use **AudioRecord** to capture the microphone and **AudioTrack** to play back the mixed audio.
--   **Foreground Service:** The audio processing must run as a **Foreground Service** to prevent the system from terminating it.
--   **Dependency Management:** Use Gradle and a dependency injection framework like Dagger/Hilt.
+This project is currently in active development. Given the platform constraints, we are focusing on building a powerful local audio mixing tool first.
 
----
+Our immediate next steps are:
+1.  **Add Microphone Recording:** Implement simultaneous recording from the device microphone.
+2.  **Implement Audio Mixing:** Create a mixer to combine the app and microphone audio streams in real-time.
+3.  **Playback the Mix:** Allow the user to hear the final mixed audio through their headphones or speakers.
 
-## 4. UI/UX Guidelines
+This will provide a solid foundation and a useful tool for local recording and mixing, as we continue to explore the best ways to share the audio with other apps.
 
-The app's user interface must be simple and intuitive, hiding the complexity of the underlying audio routing.
+## Contributing
 
--   **Single-Screen Interface:** The main screen should have clear controls to start and stop the audio loopback.
--   **App Selection:** A button should trigger a system dialog for the user to select the app they want to capture audio from.
--   **Mixing Controls:** Provide an easy-to-use interface to control the volume levels of the "internal audio" and the "microphone audio."
--   **Status Indicator:** A clear, visible indicator should show whether the loopback service is active and a visual representation of the audio levels.
--   **Consent Prompt:** When a user first starts the loopback, the app must clearly explain why a system permission dialog will appear (e.g., "Your phone will ask you for permission to capture all on-screen audio. This is required for this app to work.").
+This is an open-source project, and contributions are welcome! Whether it's code, design ideas, or documentation, feel free to open an issue or submit a pull request. Please follow standard Android Kotlin/Java style guides.
 
----
+## License
 
-## 5. Open-Source Project Guidelines
-
-This project will be developed as an open-source initiative to ensure transparency and community collaboration.
-
--   **Licensing:** MIT License.
--   **Code Style:** Follow standard Android Kotlin/Java style guides.
--   **Documentation:** All major components, functions, and public APIs must be well-documented.
--   **Contribution Process:** Use standard Git flow with pull requests reviewed by maintainers.
--   **Issue Tracking:** Use a GitHub Issues page to track bugs and feature requests.
-
-
-### Project Definition & Roadmap Extension: CI/CD Pipeline
-
-To ensure a streamlined, automated, and professional development process, we'll implement a **CI/CD pipeline** using **GitHub Actions**. This will automate versioning, building, and publishing a release with each new commit to the main branch.
-
----
-
-### 6. Continuous Integration & Deployment (CI/CD)
-
-The CI/CD pipeline will be built using GitHub Actions and will automate the full lifecycle from code commit to a published, versioned APK. This will be triggered on every push to the `main` branch. 
-
-#### 6.1 Versioning
-
-An automated versioning system will be used to generate a unique **Semantic Version (SemVer)** for each release. This ensures that every build has a clear, machine-readable version number.
-
--   **semver-based on commits:** We'll use a GitHub Action that inspects the commit messages to determine the next version number.
-    -   Commits with a `fix:` prefix will trigger a **patch** version increment (e.g., `1.0.0` -> `1.0.1`).
-    -   Commits with a `feat:` prefix will trigger a **minor** version increment (e.g., `1.0.0` -> `1.1.0`).
-    -   Commits with a `BREAKING CHANGE:` in the body will trigger a **major** version increment (e.g., `1.0.0` -> `2.0.0`).
-    -   This is based on the **Conventional Commits** specification.
-
-#### 6.2 Building & Signing
-
-The pipeline will automatically build a production-ready APK after the version number is generated.
-
--   **Build command:** The pipeline will run the standard Gradle build command, specifically `./gradlew assembleRelease`, to create a release-ready APK.
--   **Signing:** The build will be signed with a production keystore. We will securely store the signing key and its password in **GitHub Secrets** to prevent exposure in the repository.
-
-#### 6.3 Publishing & Releases
-
-The final step is to publish the signed APK to a new GitHub Release page.
-
--   **Generate a Release:** A new release will be automatically created on the GitHub repository.
--   **Release Naming:** The release name and tag will be the newly generated SemVer version (e.g., `v1.2.3`).
--   **APK as an Asset:** The signed APK file will be attached as a downloadable asset to this release page, making it easy for users to find and install the latest stable version of the app.
--   **Release Notes:** The release notes will be automatically generated from the commit messages since the last release, providing a clear and transparent changelog.
-
----
-
-### 7. Proposed GitHub Action Workflow
-
-This is a high-level overview of the GitHub Actions workflow file (`.github/workflows/ci.yml`).
-
-1.  **Trigger:** The workflow will be triggered on `push` events to the `main` branch.
-2.  **Setup:** Checkout the code, set up the Java environment, and cache Gradle dependencies.
-3.  **Version Generation:** Run the action to determine the new SemVer version based on recent commits. Store this version in an environment variable.
-4.  **Build:** Run the Gradle `assembleRelease` task. The build will be configured to use the generated version number.
-5.  **Sign:** Use a dedicated action to sign the built APK with the keystore credentials from GitHub Secrets.
-6.  **Create Release:** Use a GitHub Action to create a new release on the repository.
-7.  **Upload Artifacts:** Use a final action to upload the signed APK as a release asset, making it available for public download.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
