@@ -13,6 +13,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
+import android.media.AudioTrack // Added
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -24,71 +25,63 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 
-// NO CLASS-LEVEL @RequiresPermission HERE
 class AudioLoopService : Service() {
 
     private lateinit var mediaProjectionManager: MediaProjectionManager
     private var notificationManager: NotificationManager? = null
 
     private var audioRecord: AudioRecord? = null
+    private var audioTrack: AudioTrack? = null // Added for playback
     private var audioCaptureThread: Thread? = null
-    @Volatile private var isCapturingAudio: Boolean = false // CORRECTED @Volatile
+    @Volatile private var isCapturingAudio: Boolean = false
 
     private val SAMPLE_RATE = 44100
     private val CHANNEL_CONFIG_IN = AudioFormat.CHANNEL_IN_STEREO
+    private val CHANNEL_CONFIG_OUT = AudioFormat.CHANNEL_OUT_STEREO // Added for AudioTrack
     private val AUDIO_FORMAT_ENCODING = AudioFormat.ENCODING_PCM_16BIT
 
-    @RequiresPermission(Manifest.permission.RECORD_AUDIO) // THIS ONE STAYS on the method
+    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun startLoopbackAudio() {
-        Log.d(TAG, "Attempting to start loopback audio capture...")
+        Log.d(TAG, "Attempting to start loopback audio capture and playback...")
 
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "RECORD_AUDIO permission not granted to service. Cannot start audio capture.")
+            Log.e(TAG, "RECORD_AUDIO permission not granted. Cannot start audio capture.")
             return
         }
-
         if (currentMediaProjection == null) {
             Log.e(TAG, "MediaProjection is not available. Cannot start audio capture.")
             return
         }
-
         if (isCapturingAudio) {
-            Log.w(TAG, "Audio capture is already in progress.")
+            Log.w(TAG, "Audio capture/playback is already in progress.")
             return
         }
 
-        val config = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!)
+        // Configure AudioRecord
+        val recordConfig = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
             .addMatchingUsage(AudioAttributes.USAGE_GAME)
             .build()
-
-        val audioFormat = AudioFormat.Builder()
+        val recordAudioFormat = AudioFormat.Builder()
             .setEncoding(AUDIO_FORMAT_ENCODING)
             .setSampleRate(SAMPLE_RATE)
             .setChannelMask(CHANNEL_CONFIG_IN)
             .build()
-
-        val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING)
-        if (minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-            Log.e(TAG, "Invalid audio parameters for getMinBufferSize.")
+        val recordMinBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING)
+        if (recordMinBufferSize == AudioRecord.ERROR_BAD_VALUE) {
+            Log.e(TAG, "Invalid audio parameters for AudioRecord getMinBufferSize.")
             return
         }
-        val bufferSizeInBytes = minBufferSize * 2
+        val recordBufferSizeInBytes = recordMinBufferSize * 2
 
         try {
             audioRecord = AudioRecord.Builder()
-                .setAudioFormat(audioFormat)
-                .setAudioPlaybackCaptureConfig(config)
-                .setBufferSizeInBytes(bufferSizeInBytes)
+                .setAudioFormat(recordAudioFormat)
+                .setAudioPlaybackCaptureConfig(recordConfig)
+                .setBufferSizeInBytes(recordBufferSizeInBytes)
                 .build()
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException creating AudioRecord: ${e.message}", e)
-            return
-        } catch (e: UnsupportedOperationException) {
-            Log.e(TAG, "UnsupportedOperationException creating AudioRecord: ${e.message}. Playback capture not supported?", e)
-            return
-        } catch (e: IllegalArgumentException) {
-            Log.e(TAG, "IllegalArgumentException creating AudioRecord: ${e.message}", e)
+        } catch (e: Exception) { // Catch broader exceptions for initialization
+            Log.e(TAG, "Exception creating AudioRecord: ${e.message}", e)
             return
         }
 
@@ -98,42 +91,93 @@ class AudioLoopService : Service() {
             audioRecord = null
             return
         }
+        Log.d(TAG, "AudioRecord initialized. Buffer size: $recordBufferSizeInBytes bytes")
 
-        Log.d(TAG, "AudioRecord initialized. Min buffer size: $minBufferSize, Used buffer size: $bufferSizeInBytes")
-
-        isCapturingAudio = true
-        audioRecord?.startRecording()
-        Log.d(TAG, "AudioRecord started recording.")
-
-        audioCaptureThread = Thread {
-            val audioBuffer = ByteArray(bufferSizeInBytes)
-            while (isCapturingAudio && audioRecord != null && audioRecord!!.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                val bytesRead = audioRecord?.read(audioBuffer, 0, audioBuffer.size)
-                if (bytesRead != null && bytesRead > 0) {
-                    // TODO: Process the audioBuffer
-                } else if (bytesRead != null && bytesRead < 0) {
-                    Log.e(TAG, "Error reading audio data: $bytesRead")
-                }
-            }
-            Log.d(TAG, "Audio capture thread finished.")
+        // Configure AudioTrack
+        val trackMinBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG_OUT, AUDIO_FORMAT_ENCODING)
+        if (trackMinBufferSize == AudioTrack.ERROR_BAD_VALUE) {
+            Log.e(TAG, "Invalid audio parameters for AudioTrack getMinBufferSize.")
+            audioRecord?.release() // Release already acquired record
+            audioRecord = null
+            return
         }
-        audioCaptureThread?.name = "AudioCaptureThread"
-        audioCaptureThread?.start()
-        Log.d(TAG, "Audio capture thread started.")
-    }
+        val trackBufferSizeInBytes = trackMinBufferSize * 2
 
-    private fun stopLoopbackAudio() {
-        Log.d(TAG, "Stopping loopback audio capture...")
-        if (!isCapturingAudio && audioRecord == null) {
-            Log.d(TAG, "Audio capture not running or already stopped.")
+        try {
+            audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AUDIO_FORMAT_ENCODING)
+                        .setSampleRate(SAMPLE_RATE)
+                        .setChannelMask(CHANNEL_CONFIG_OUT)
+                        .build()
+                )
+                .setBufferSizeInBytes(trackBufferSizeInBytes)
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception creating AudioTrack: ${e.message}", e)
+            audioRecord?.release()
+            audioRecord = null
             return
         }
 
-        isCapturingAudio = false
+        if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+            Log.e(TAG, "AudioTrack failed to initialize.")
+            audioRecord?.release()
+            audioRecord = null
+            audioTrack?.release()
+            audioTrack = null
+            return
+        }
+        Log.d(TAG, "AudioTrack initialized. Buffer size: $trackBufferSizeInBytes bytes")
+
+        isCapturingAudio = true // Signal that processing can start
+        audioRecord?.startRecording()
+        audioTrack?.play()
+        Log.d(TAG, "AudioRecord and AudioTrack started.")
+
+        audioCaptureThread = Thread {
+            // Use the larger of the two buffer sizes for our processing buffer,
+            // or stick to record buffer if that's what's driving the read pace.
+            val audioBuffer = ByteArray(recordBufferSizeInBytes)
+            Log.d(TAG, "Audio capture thread started with buffer size: ${audioBuffer.size}")
+
+            while (isCapturingAudio &&
+                   audioRecord != null && audioRecord!!.recordingState == AudioRecord.RECORDSTATE_RECORDING &&
+                   audioTrack != null && audioTrack!!.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                val bytesRead = audioRecord?.read(audioBuffer, 0, audioBuffer.size)
+                if (bytesRead != null && bytesRead > 0) {
+                    audioTrack?.write(audioBuffer, 0, bytesRead)
+                } else if (bytesRead != null && bytesRead < 0) {
+                    Log.e(TAG, "Error reading audio data from AudioRecord: $bytesRead")
+                    // Potentially stop if errors persist, or implement error handling
+                }
+            }
+            Log.d(TAG, "Audio capture/playback thread finished.")
+        }
+        audioCaptureThread?.name = "AudioPlaybackThread"
+        audioCaptureThread?.start()
+    }
+
+    private fun stopLoopbackAudio() {
+        Log.d(TAG, "Stopping loopback audio capture and playback...")
+        if (!isCapturingAudio && audioRecord == null && audioTrack == null) {
+            Log.d(TAG, "Audio capture/playback not running or already stopped.")
+            return
+        }
+
+        isCapturingAudio = false // Signal thread to stop
 
         if (audioCaptureThread?.isAlive == true) {
             try {
-                audioCaptureThread?.join(500)
+                audioCaptureThread?.join(500) // Wait for thread to finish
             } catch (e: InterruptedException) {
                 Log.w(TAG, "Interrupted while joining audio capture thread", e)
                 Thread.currentThread().interrupt()
@@ -141,6 +185,7 @@ class AudioLoopService : Service() {
         }
         audioCaptureThread = null
 
+        // Stop and release AudioRecord
         if (audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
             try {
                 audioRecord?.stop()
@@ -152,6 +197,21 @@ class AudioLoopService : Service() {
         audioRecord?.release()
         audioRecord = null
         Log.d(TAG, "AudioRecord released.")
+
+        // Stop and release AudioTrack
+        if (audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
+            try {
+                audioTrack?.pause() // Pause before stop can be good practice
+                audioTrack?.flush() // Flush any pending data
+                audioTrack?.stop()
+                Log.d(TAG, "AudioTrack stopped.")
+            } catch (e: IllegalStateException) {
+                Log.e(TAG, "IllegalStateException stopping AudioTrack: ${e.message}", e)
+            }
+        }
+        audioTrack?.release()
+        audioTrack = null
+        Log.d(TAG, "AudioTrack released.")
     }
 
     private fun startForegroundNotification() {
@@ -182,11 +242,11 @@ class AudioLoopService : Service() {
 
      private fun clearProjectionAndAudioInstance() {
         Log.d(TAG, "Clearing MediaProjection and stopping audio instance.")
-        stopLoopbackAudio()
+        stopLoopbackAudio() // This now stops both record and track
         currentMediaProjection?.unregisterCallback(mediaProjectionCallback)
         currentMediaProjection?.stop()
         currentMediaProjection = null
-        _isRunning.postValue(isProjectionSetup()) // CRITICAL FIX HERE: Use a non-null value
+        _isRunning.postValue(isProjectionSetup())
         startForegroundNotification()
     }
 
@@ -195,8 +255,8 @@ class AudioLoopService : Service() {
         Log.d(TAG, "Service onCreate")
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        _isRunning.postValue(false) // Initialize with a non-null value
-        clearProjectionAndAudioInstance()
+        _isRunning.postValue(false)
+        // clearProjectionAndAudioInstance() // Called from onStartCommand or explicitly if needed
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -206,28 +266,31 @@ class AudioLoopService : Service() {
         when (action) {
             ACTION_START_SERVICE -> {
                 Log.d(TAG, "ACTION_START_SERVICE received. Cleaning up any existing session.")
-                stopLoopbackAudio() // Stop any current audio capture
+                stopLoopbackAudio() 
                 if (currentMediaProjection != null) {
                     Log.d(TAG, "Clearing existing MediaProjection.")
                     currentMediaProjection?.unregisterCallback(mediaProjectionCallback)
                     currentMediaProjection?.stop()
                     currentMediaProjection = null
                 }
-                _isRunning.postValue(true) // Explicitly set to true after cleanup
-                startForegroundNotification() // Update notification (will show "Ready to select app")
+                _isRunning.postValue(true) 
+                startForegroundNotification() 
             }
             ACTION_STOP_SERVICE -> {
                 _isRunning.postValue(false)
                 clearProjectionAndAudioInstance()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
+                Log.d(TAG,"Service stopped and self-terminated.")
             }
             ACTION_SETUP_PROJECTION -> {
                 if (_isRunning.value != true) {
-                     Log.w(TAG, "ACTION_SETUP_PROJECTION received but service is not marked as running. Starting service first.")
-                    _isRunning.postValue(true)
+                     Log.w(TAG, "ACTION_SETUP_PROJECTION received but service is not marked as running. Starting service first implicitly.")
+                    _isRunning.postValue(true) // Ensure service is marked as running
+                     // Important: The service should already be in foreground from ACTION_START_SERVICE
+                     // If not, mediaProjectionManager.getMediaProjection might fail on Android 10+
                 }
-                startForegroundNotification()
+                startForegroundNotification() // Update notification (e.g. if service was implicitly started)
 
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
                 val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -241,20 +304,22 @@ class AudioLoopService : Service() {
                     try {
                         val projection = mediaProjectionManager.getMediaProjection(resultCode, data)
                         if (projection != null) {
-                            // It's good practice to clear any old projection just in case,
-                            // though ACTION_START_SERVICE should have handled most scenarios.
-                            // clearProjectionAndAudioInstance() // This might be too aggressive here if called right after start
-                            currentMediaProjection = projection // Assign new projection
+                            // It might be good to clear any old projection/audio,
+                            // though ACTION_START_SERVICE should handle this.
+                            // clearProjectionAndAudioInstance() // This was too aggressive here.
+                            
+                            currentMediaProjection = projection 
                             currentMediaProjection?.registerCallback(mediaProjectionCallback, null)
                             Log.i(TAG, "MediaProjection obtained and stored.")
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                startLoopbackAudio()
+                                startLoopbackAudio() // Now attempts to start both record and playback
                             } else {
                                 Log.w(TAG, "AudioPlaybackCaptureConfiguration requires Android Q (API 29)+")
+                                clearProjectionAndAudioInstance() // Clean up if feature not supported
                             }
                         } else {
                              Log.e(TAG, "getMediaProjection returned null despite RESULT_OK.")
-                             clearProjectionAndAudioInstance() // Clear if projection is null
+                             clearProjectionAndAudioInstance()
                         }
                     } catch (e: SecurityException) {
                         Log.e(TAG, "SecurityException getting MediaProjection. Is service in foreground?", e)
@@ -267,8 +332,7 @@ class AudioLoopService : Service() {
                     Log.w(TAG, "ACTION_SETUP_PROJECTION: Failed to get valid data. ResultCode: $resultCode")
                     clearProjectionAndAudioInstance()
                 }
-                startForegroundNotification() // Update notification text
-                // Post the current actual state after attempting projection setup
+                startForegroundNotification() 
                 _isRunning.postValue(isProjectionSetup())
             }
         }
@@ -317,7 +381,7 @@ class AudioLoopService : Service() {
 
         fun clearStaticProjectionReference(){
             Log.d(TAG, "Clearing static MediaProjection reference.")
-            currentMediaProjection?.stop() // Stop if not already
+            currentMediaProjection?.stop() 
             currentMediaProjection = null
         }
     }
