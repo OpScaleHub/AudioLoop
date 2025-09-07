@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Per default Android behavior, shared_prefs are backed up. -->
+    <!-- Add rules here to specify what else to back up. -->
+    <!-- For this project, we likely don't need complex backup rules. -->
+    <!-- See https://developer.android.com/guide/topics/data/autobackup -->
+</full-backup-content>
