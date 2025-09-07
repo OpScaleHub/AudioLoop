@@ -61,3 +61,54 @@ This project will be developed as an open-source initiative to ensure transparen
 -   **Documentation:** All major components, functions, and public APIs must be well-documented.
 -   **Contribution Process:** Use standard Git flow with pull requests reviewed by maintainers.
 -   **Issue Tracking:** Use a GitHub Issues page to track bugs and feature requests.
+
+
+### Project Definition & Roadmap Extension: CI/CD Pipeline
+
+To ensure a streamlined, automated, and professional development process, we'll implement a **CI/CD pipeline** using **GitHub Actions**. This will automate versioning, building, and publishing a release with each new commit to the main branch.
+
+---
+
+### 6. Continuous Integration & Deployment (CI/CD)
+
+The CI/CD pipeline will be built using GitHub Actions and will automate the full lifecycle from code commit to a published, versioned APK. This will be triggered on every push to the `main` branch. 
+
+#### 6.1 Versioning
+
+An automated versioning system will be used to generate a unique **Semantic Version (SemVer)** for each release. This ensures that every build has a clear, machine-readable version number.
+
+-   **semver-based on commits:** We'll use a GitHub Action that inspects the commit messages to determine the next version number.
+    -   Commits with a `fix:` prefix will trigger a **patch** version increment (e.g., `1.0.0` -> `1.0.1`).
+    -   Commits with a `feat:` prefix will trigger a **minor** version increment (e.g., `1.0.0` -> `1.1.0`).
+    -   Commits with a `BREAKING CHANGE:` in the body will trigger a **major** version increment (e.g., `1.0.0` -> `2.0.0`).
+    -   This is based on the **Conventional Commits** specification.
+
+#### 6.2 Building & Signing
+
+The pipeline will automatically build a production-ready APK after the version number is generated.
+
+-   **Build command:** The pipeline will run the standard Gradle build command, specifically `./gradlew assembleRelease`, to create a release-ready APK.
+-   **Signing:** The build will be signed with a production keystore. We will securely store the signing key and its password in **GitHub Secrets** to prevent exposure in the repository.
+
+#### 6.3 Publishing & Releases
+
+The final step is to publish the signed APK to a new GitHub Release page.
+
+-   **Generate a Release:** A new release will be automatically created on the GitHub repository.
+-   **Release Naming:** The release name and tag will be the newly generated SemVer version (e.g., `v1.2.3`).
+-   **APK as an Asset:** The signed APK file will be attached as a downloadable asset to this release page, making it easy for users to find and install the latest stable version of the app.
+-   **Release Notes:** The release notes will be automatically generated from the commit messages since the last release, providing a clear and transparent changelog.
+
+---
+
+### 7. Proposed GitHub Action Workflow
+
+This is a high-level overview of the GitHub Actions workflow file (`.github/workflows/ci.yml`).
+
+1.  **Trigger:** The workflow will be triggered on `push` events to the `main` branch.
+2.  **Setup:** Checkout the code, set up the Java environment, and cache Gradle dependencies.
+3.  **Version Generation:** Run the action to determine the new SemVer version based on recent commits. Store this version in an environment variable.
+4.  **Build:** Run the Gradle `assembleRelease` task. The build will be configured to use the generated version number.
+5.  **Sign:** Use a dedicated action to sign the built APK with the keystore credentials from GitHub Secrets.
+6.  **Create Release:** Use a GitHub Action to create a new release on the repository.
+7.  **Upload Artifacts:** Use a final action to upload the signed APK as a release asset, making it available for public download.
