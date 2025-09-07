@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<data-extraction-rules>
-    <cloud-backup>
-        <!-- We are not defining specific rules, so default behavior applies. -->
-        <!-- See https://developer.android.com/guide/topics/data/autobackup#Rules -->
-    </cloud-backup>
-    <device-transfer>
-        <!-- We are not defining specific rules, so default behavior applies. -->
-        <!-- See https://developer.android.com/guide/topics/data/autobackup#Rules -->
-    </device-transfer>
-</data-extraction-rules>
+<resources>
+    <string name="data_extraction_rules">
+        <data-extraction-rules>
+            <cloud-backup>
+                <!-- Exclude everything from cloud backup -->
+                <exclude domain="root" path="." />
+            </cloud-backup>
+            <device-transfer>
+                <!-- Allow all default data for device transfer -->
+                <include domain="root" path="." />
+            </device-transfer>
+        </data-extraction-rules>
+    </string>
+</resources>

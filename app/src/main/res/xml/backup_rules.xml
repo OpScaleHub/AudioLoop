@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Remove the following exclude if you want to backup device-specific identifiers -->
+    <!--
+    <exclude domain="sharedpref" path="device.xml"/>
+    -->
+</full-backup-content>
