@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Required for Foreground Service notifications on Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
 
     <application
@@ -26,12 +28,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Define your Foreground Service here later -->
-        <!--
+
         <service
             android:name=".AudioLoopService"
-            android:foregroundServiceType="mediaProjection|microphone" />
-        -->
+            android:foregroundServiceType="microphone|mediaProjection"
+            android:exported="false"/>
     </application>
 
 </manifest>
