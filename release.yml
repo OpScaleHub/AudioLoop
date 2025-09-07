@@ -1,0 +1,65 @@
+name: Build and Release APK
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # To create releases and tags
+      pull-requests: read # To read commit messages
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for analyzing commit history
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Generate Version Number
+        id: versioning
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          # Uses conventional commits (e.g., feat:, fix:, BREAKING CHANGE:)
+          # The new version is available in outputs.version
+          # This requires a GITHUB_TOKEN with write access to create tags
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Update Gradle properties
+        run: |
+          echo "Setting version name to ${{ steps.versioning.outputs.version }}"
+          sed -i "s/versionName = \".*\"/versionName = \"${{ steps.versioning.outputs.version }}\"/" app/build.gradle.kts
+
+      - name: Decode Keystore
+        id: decode_keystore
+        if: secrets.SIGNING_KEY_STORE_BASE64 != ''
+        uses: timheuer/base64-to-file@v1.2
+        with:
+          fileName: 'keystore.jks'
+          encodedString: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_STORE_PATH: ${{ steps.decode_keystore.outputs.filePath }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2.0.4
+        with:
+          tag_name: v${{ steps.versioning.outputs.version }}
+          name: Release v${{ steps.versioning.outputs.version }}
+          generate_release_notes: true # Auto-generates release notes from commits
+          files: app/build/outputs/apk/release/app-release-signed.apk
