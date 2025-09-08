@@ -102,9 +102,10 @@ class AudioLoopService : Service() {
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun startAudioProcessing(): Boolean {
         Log.d(TAG, "BoostedMicTest: Attempting audio processing (Boosted Mic to Track)...")
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { Log.e(TAG, "BoostedMicTest: RECORD_AUDIO permission not granted."); return false }
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { Log.e(TAG, "BoostedMicTest: RECORD_AUDIO permission not granted."); _isRunning.postValue(false); return false }
+        if (currentMediaProjection == null) { Log.e(TAG, "BoostedMicTest: MediaProjection is not set up.");  _isRunning.postValue(false); return false }
         if (audioProcessingThread?.isAlive == true) { Log.w(TAG, "BoostedMicTest: Thread already running."); return true }
-        if (!requestAudioFocus()) { return false }
+        if (!requestAudioFocus()) { _isRunning.postValue(false); return false }
 
         var appRecordOk = true
         var micRecordOk = false
@@ -113,17 +114,19 @@ class AudioLoopService : Service() {
         var micRecordBufferSizeInBytes = 0
         var trackBufferSizeInBytes = 0
 
-        if (currentMediaProjection != null) {
-            val arFormat = AudioFormat.Builder().setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(APP_CHANNEL_CONFIG_IN).build()
-            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!).addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME).build()
-            appRecordBufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, APP_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING) * 2
-            if (appRecordBufferSizeInBytes > 0) {
-                try {
-                    appAudioRecord = AudioRecord.Builder().setAudioFormat(arFormat).setAudioPlaybackCaptureConfig(captureConfig).setBufferSizeInBytes(appRecordBufferSizeInBytes).build()
-                    if (appAudioRecord?.state != AudioRecord.STATE_INITIALIZED) { Log.e(TAG, "BoostedMicTest: App AR init failed."); appRecordOk = false }
-                } catch (e: Exception) { Log.e(TAG, "BoostedMicTest: App AR creation ex", e); appRecordOk = false }
-            } else { Log.e(TAG, "BoostedMicTest: App AR invalid buffer size"); appRecordOk = false }
-        } else { Log.d(TAG, "BoostedMicTest: No MediaProjection, App AR not used for playback.") }
+        // App audio capture setup (optional, based on currentMediaProjection)
+        val arFormat = AudioFormat.Builder().setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(APP_CHANNEL_CONFIG_IN).build()
+        val captureConfig = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .addMatchingUsage(AudioAttributes.USAGE_GAME)
+            .build()
+        appRecordBufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, APP_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING) * 2
+        if (appRecordBufferSizeInBytes > 0) {
+            try {
+                appAudioRecord = AudioRecord.Builder().setAudioFormat(arFormat).setAudioPlaybackCaptureConfig(captureConfig).setBufferSizeInBytes(appRecordBufferSizeInBytes).build()
+                if (appAudioRecord?.state != AudioRecord.STATE_INITIALIZED) { Log.e(TAG, "BoostedMicTest: App AR init failed."); appRecordOk = false }
+            } catch (e: Exception) { Log.e(TAG, "BoostedMicTest: App AR creation ex", e); appRecordOk = false }
+        } else { Log.e(TAG, "BoostedMicTest: App AR invalid buffer size"); appRecordOk = false }
 
         val micFormat = AudioFormat.Builder().setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(MIC_CHANNEL_CONFIG_IN).build()
         micRecordBufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, MIC_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING) * 2
@@ -148,6 +151,7 @@ class AudioLoopService : Service() {
         if (! (appRecordOk && micRecordOk && audioTrackOk) ) {
             Log.e(TAG, "BoostedMicTest: Audio setup failed. AppRec:$appRecordOk, MicRec:$micRecordOk, Track:$audioTrackOk")
             appAudioRecord?.release(); appAudioRecord = null; micAudioRecord?.release(); micAudioRecord = null; audioTrack?.release(); audioTrack = null
+            _isRunning.postValue(false)
             return false
         }
 
@@ -158,13 +162,14 @@ class AudioLoopService : Service() {
         micAudioRecord?.startRecording()
         audioTrack?.play()
         Log.d(TAG, "BoostedMicTest: Sources and track started (Boosted Mic to Track Test).")
+        _isRunning.postValue(true)
 
         audioProcessingThread = Thread {
             val appBuf = if (appAudioRecord != null && appRecordBufferSizeInBytes > 0) ByteBuffer.allocateDirect(appRecordBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
             val micBuf = if (micAudioRecord != null && micRecordBufferSizeInBytes > 0) ByteBuffer.allocateDirect(micRecordBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
             val playbackBuf = if(trackBufferSizeInBytes > 0) ByteBuffer.allocateDirect(trackBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
 
-            if (playbackBuf == null) { Log.e(TAG, "BoostedMicTest: Failed to allocate playbackBuf."); return@Thread }
+            if (playbackBuf == null) { Log.e(TAG, "BoostedMicTest: Failed to allocate playbackBuf."); _isRunning.postValue(false); return@Thread }
             var logCounter = 0
 
             while (isCapturingMicAudio && shouldBePlayingBasedOnFocus && audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
@@ -216,6 +221,10 @@ class AudioLoopService : Service() {
                 }
             }
             Log.d(TAG, "BoostedMicTest: Audio processing thread finished.")
+            // Ensure isRunning state is updated when thread stops for any reason other than explicit stop command
+            if (_isRunning.value == true && !(actionBeingProcessed == ACTION_PROCESS_AUDIO_STOP || actionBeingProcessed == ACTION_STOP_SERVICE) ) {
+                 _isRunning.postValue(false)
+            }
         }
         audioProcessingThread?.name = "BoostedMicTestThread"
         audioProcessingThread?.start()
@@ -224,66 +233,139 @@ class AudioLoopService : Service() {
 
     private fun stopAudioProcessing() {
         Log.d(TAG, "BoostedMicTest: Stopping audio processing...")
-        isCapturingAppAudio = false; isCapturingMicAudio = false; shouldBePlayingBasedOnFocus = false
+        isCapturingAppAudio = false; isCapturingMicAudio = false; // shouldBePlayingBasedOnFocus = false; // Keep focus state for passive listener
         if (audioProcessingThread?.isAlive == true) { try { audioProcessingThread?.join(500) } catch (e: InterruptedException) { Log.w(TAG, "BoostedMicTest: Join interrupted", e); Thread.currentThread().interrupt() } }
         audioProcessingThread = null
         appAudioRecord?.apply { if (recordingState == AudioRecord.RECORDSTATE_RECORDING) stop(); release() }; appAudioRecord = null
         micAudioRecord?.apply { if (recordingState == AudioRecord.RECORDSTATE_RECORDING) stop(); release() }; micAudioRecord = null
         audioTrack?.apply { if (playState != AudioTrack.PLAYSTATE_STOPPED) { pause(); flush(); stop(); }; release() }; audioTrack = null
         Log.d(TAG, "BoostedMicTest: All audio resources released.")
+        _isRunning.postValue(false)
     }
 
     private fun startForegroundNotification() {
-        val statusText = if (isCapturingMicAudio && micAudioRecord != null) "Testing Boosted Mic to Headphones" else "Ready (Boosted Mic Test)"
+        val statusText = if (_isRunning.value == true) "Looping Audio (Boosted Mic)" else "Ready (Boosted Mic Test)"
         val channelId = "AudioLoopServiceChannel"; if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { val channel = NotificationChannel(channelId, "Audio Loop Service", NotificationManager.IMPORTANCE_LOW); notificationManager = getSystemService(NotificationManager::class.java); notificationManager?.createNotificationChannel(channel) }; val notification: Notification = NotificationCompat.Builder(this, channelId).setContentTitle("AudioLoop (Boosted Mic Test)").setContentText(statusText).setSmallIcon(R.mipmap.ic_launcher).setOngoing(true).build(); try { startForeground(SERVICE_NOTIFICATION_ID, notification) } catch (e: Exception) { Log.e(TAG, "BoostedMicTest: Error starting fg", e) }
     }
 
-    private fun clearProjectionAndAudioInstance() { Log.d(TAG, "BoostedMicTest: Clearing MediaProjection and stopping audio."); stopAudioProcessing(); currentMediaProjection?.unregisterCallback(mediaProjectionCallback); currentMediaProjection?.stop(); currentMediaProjection = null; startForegroundNotification() }
+    private fun clearProjectionAndAudioInstance() { 
+        Log.d(TAG, "BoostedMicTest: Clearing MediaProjection and stopping audio.")
+        stopAudioProcessing()
+        currentMediaProjection?.unregisterCallback(mediaProjectionCallback)
+        currentMediaProjection?.stop()
+        currentMediaProjection = null
+        startForegroundNotification() // Update notification to "Ready"
+    }
+
+    private var actionBeingProcessed : String? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action; Log.d(TAG, "BoostedMicTest: onStartCommand, action: $action")
-        when (action) {
-            ACTION_START_SERVICE -> { Log.d(TAG, "BoostedMicTest: ACTION_START_SERVICE"); stopAudioProcessing(); if (currentMediaProjection != null) { currentMediaProjection?.stop(); currentMediaProjection = null }; _isRunning.postValue(true); startForegroundNotification() }
-            ACTION_STOP_SERVICE -> { Log.d(TAG, "BoostedMicTest: ACTION_STOP_SERVICE"); _isRunning.postValue(false); clearProjectionAndAudioInstance(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+        actionBeingProcessed = intent?.action
+        Log.d(TAG, "BoostedMicTest: onStartCommand, action: $actionBeingProcessed")
+        when (actionBeingProcessed) {
+            ACTION_START_SERVICE -> { 
+                Log.d(TAG, "BoostedMicTest: ACTION_START_SERVICE - Service is preparing.")
+                // This action now primarily ensures the service is in a started state with notification.
+                // Actual audio processing start is triggered by ACTION_PROCESS_AUDIO_START
+                startForegroundNotification() 
+            }
+            ACTION_PROCESS_AUDIO_START -> {
+                Log.d(TAG, "BoostedMicTest: ACTION_PROCESS_AUDIO_START")
+                if (currentMediaProjection != null) {
+                    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        startAudioProcessing()
+                    } else {
+                        Log.e(TAG, "BoostedMicTest: RECORD_AUDIO permission not granted for PROCESS_AUDIO_START.")
+                        _isRunning.postValue(false) // Ensure UI reflects this state
+                    }
+                } else {
+                    Log.w(TAG, "BoostedMicTest: MediaProjection not available. Cannot start audio processing.")
+                     _isRunning.postValue(false) // Ensure UI reflects this state
+                }
+                startForegroundNotification() // Update notification based on new state
+            }
+            ACTION_PROCESS_AUDIO_STOP -> {
+                Log.d(TAG, "BoostedMicTest: ACTION_PROCESS_AUDIO_STOP")
+                stopAudioProcessing()
+                startForegroundNotification() // Update notification based on new state
+            }
+            ACTION_STOP_SERVICE -> { 
+                Log.d(TAG, "BoostedMicTest: ACTION_STOP_SERVICE")
+                clearProjectionAndAudioInstance()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf() 
+            }
             ACTION_SETUP_PROJECTION -> {
                 Log.d(TAG, "BoostedMicTest: ACTION_SETUP_PROJECTION")
-                stopAudioProcessing(); if (currentMediaProjection != null) { currentMediaProjection?.stop(); currentMediaProjection = null }
+                // Stop any previous processing before setting up new projection
+                stopAudioProcessing() 
+                if (currentMediaProjection != null) { 
+                    currentMediaProjection?.unregisterCallback(mediaProjectionCallback)
+                    currentMediaProjection?.stop()
+                    currentMediaProjection = null 
+                }
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
                 val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) intent.getParcelableExtra(EXTRA_DATA_INTENT, Intent::class.java) else @Suppress("DEPRECATION") intent.getParcelableExtra(EXTRA_DATA_INTENT)
-                var processingStarted = false
+                
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     try {
                         val projection = mediaProjectionManager.getMediaProjection(resultCode, data)
                         if (projection != null) {
-                            currentMediaProjection = projection; currentMediaProjection?.registerCallback(mediaProjectionCallback, null)
-                            if (startAudioProcessing()) processingStarted = true
-                            else { currentMediaProjection?.stop(); currentMediaProjection = null }
-                        } else Log.e(TAG, "BoostedMicTest: getMediaProjection null.")
-                    } catch (e: Exception) { Log.e(TAG, "BoostedMicTest: Ex in SETUP_PROJECTION", e) }
-                } else Log.w(TAG, "BoostedMicTest: SETUP_PROJECTION Failed. Code: $resultCode")
-                _isRunning.postValue(processingStarted)
-                if (!processingStarted) clearProjectionAndAudioInstance()
-                startForegroundNotification()
+                            currentMediaProjection = projection
+                            currentMediaProjection?.registerCallback(mediaProjectionCallback, null)
+                            Log.d(TAG, "BoostedMicTest: MediaProjection obtained and callback registered.")
+                            // Do not start audio processing here. Wait for ACTION_PROCESS_AUDIO_START
+                            _isRunning.postValue(false) // Projection is ready, but not processing yet
+                        } else {
+                             Log.e(TAG, "BoostedMicTest: getMediaProjection returned null.")
+                             _isRunning.postValue(false)
+                        }
+                    } catch (e: Exception) { 
+                        Log.e(TAG, "BoostedMicTest: Exception in ACTION_SETUP_PROJECTION", e)
+                        _isRunning.postValue(false)
+                    }
+                } else {
+                    Log.w(TAG, "BoostedMicTest: ACTION_SETUP_PROJECTION failed. ResultCode: $resultCode")
+                    _isRunning.postValue(false)
+                }
+                startForegroundNotification() // Update notification (e.g., to "Ready" or "Projection Set")
             }
         }
+        actionBeingProcessed = null // Reset after handling
         return START_NOT_STICKY
     }
 
-    private val mediaProjectionCallback = object : MediaProjection.Callback() { override fun onStop() { super.onStop(); Log.w(TAG, "BoostedMicTest: Projection stopped."); _isRunning.postValue(false); clearProjectionAndAudioInstance() } }
-    override fun onDestroy() { super.onDestroy(); Log.d(TAG, "BoostedMicTest: Service onDestroy"); abandonAudioFocus(); clearProjectionAndAudioInstance(); _isRunning.postValue(false) }
+    private val mediaProjectionCallback = object : MediaProjection.Callback() { 
+        override fun onStop() { 
+            super.onStop()
+            Log.w(TAG, "BoostedMicTest: Projection stopped externally.")
+            // If projection stops, we must stop audio processing and update state.
+            clearProjectionAndAudioInstance() 
+            _isRunning.postValue(false)
+        }
+    }
+    override fun onDestroy() { 
+        super.onDestroy()
+        Log.d(TAG, "BoostedMicTest: Service onDestroy")
+        abandonAudioFocus()
+        clearProjectionAndAudioInstance()
+        // _isRunning.postValue(false) // Already handled by clearProjectionAndAudioInstance
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
         private const val TAG = "AudioLoopService"
-        // Other companion object members as before...
         private const val SERVICE_NOTIFICATION_ID = 12345
         const val ACTION_START_SERVICE = "com.audioloop.audioloop.ACTION_START_SERVICE"
         const val ACTION_STOP_SERVICE = "com.audioloop.audioloop.ACTION_STOP_SERVICE"
         const val ACTION_SETUP_PROJECTION = "com.audioloop.audioloop.ACTION_SETUP_PROJECTION"
+        const val ACTION_PROCESS_AUDIO_START = "com.audioloop.audioloop.ACTION_PROCESS_AUDIO_START"
+        const val ACTION_PROCESS_AUDIO_STOP = "com.audioloop.audioloop.ACTION_PROCESS_AUDIO_STOP"
         const val EXTRA_RESULT_CODE = "com.audioloop.audioloop.EXTRA_RESULT_CODE"
         const val EXTRA_DATA_INTENT = "com.audioloop.audioloop.EXTRA_DATA_INTENT"
         var currentMediaProjection: MediaProjection? = null; private set
-        private val _isRunning = MutableLiveData<Boolean>(); val isRunning: LiveData<Boolean> = _isRunning
+        private val _isRunning = MutableLiveData<Boolean>()
+        val isRunning: LiveData<Boolean> = _isRunning
         fun isProjectionSetup(): Boolean = currentMediaProjection != null
     }
 }
