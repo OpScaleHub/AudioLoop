@@ -1,48 +1,53 @@
-# AudioLoop: Mix and Share Audio on Android
+## Updated `README.md`
 
-AudioLoop is an open-source Android application designed to capture, mix, and share audio between apps. Imagine playing a YouTube video's audio into a live Twitter Space or a conference call, right from your phone. This project aims to make that possible through an intuitive floating widget.
 
-## The Goal
+# AudioLoop: A Floating Audio Mixer for Android
 
-Our vision is a simple, movable, on-screen widget that lets you:
+AudioLoop is an open-source Android application that operates as a **floating, on-screen gadget** for capturing, mixing, and sharing audio between apps. Imagine seamlessly piping a YouTube video's audio into a live conference call or a social audio room, all from a discreet, movable widget on your screen.
 
-1.  **Capture App Audio:** Stream the sound output from an app like YouTube or a music player.
-2.  **Mix with Microphone:** Simultaneously capture your voice from the device's microphone.
+## The Vision
+
+Our goal is to create a simple, intuitive, and movable floating widget that puts powerful audio mixing controls at your fingertips. This gadget will allow you to:
+
+1.  **Capture App Audio:** Stream the sound output from any application, like a podcast player or a video.
+2.  **Mix with Microphone:** Simultaneously record your voice from the device's microphone.
 3.  **Share Everywhere:** Use this combined audio stream as your input in other applications, such as meeting apps (Zoom, Google Meet) or social audio platforms (Twitter Spaces).
 
-## How It Works & The Challenges
+## How It Works & The Core Challenge
 
-While the goal is simple, Android's security model presents a significant challenge.
+The user experience is now centered around a **persistent floating widget** that stays on top of other apps. While the user-facing design is simple, Android's security model presents a significant challenge to our sharing goal.
 
-### What's Achievable Now
+### What's Achievable
 
-*   **App Audio Capture:** We can successfully capture the audio output from other applications.
-*   **Microphone Input:** We can add functionality to record from the microphone at the same time.
-*   **Audio Mixing:** The captured app audio and microphone audio can be mixed together into a single stream within AudioLoop.
+* **Floating UI:** The app is now a floating gadget, thanks to the "Draw over other apps" permission.
+* **App Audio Capture:** We can successfully capture the audio output from other applications.
+* **Microphone Input:** We can add functionality to record from the microphone at the same time.
+* **Real-time Mixing:** The captured app audio and microphone audio can be mixed together into a single, real-time stream within AudioLoop.
 
-### The Core Challenge: Sharing the Mix
+### The Problem: The "Virtual Microphone"
 
 Directly feeding this mixed audio into another app (like Twitter Spaces) as a "virtual microphone" is not possible for a standard Android app due to OS security and sandboxing limitations. Apps like Zoom or Twitter Spaces are hard-wired to use the physical microphone and don't allow selecting a different audio source.
 
 **The Workaround:**
-The only way for a standard app to achieve a similar result is indirectly:
+The only viable method for a standard app to share audio with a meeting app is indirectly:
 1.  AudioLoop plays the mixed audio (app sound + your voice) out loud through the phone's speaker.
 2.  The other app (e.g., Twitter Spaces) listens with the physical microphone and picks up the sound from the speaker.
 
 **Limitations of this approach:**
-*   **Echo/Feedback:** Can occur if you aren't using headphones for the meeting audio.
-*   **Reduced Quality:** The audio is being played and re-recorded, which degrades its quality.
+* **Echo/Feedback:** Can occur if you aren't using headphones to listen to the meeting audio.
+* **Reduced Quality:** The sound is being played and re-recorded, which naturally degrades its quality.
 
 ## Project Status & Next Steps
 
-This project is currently in active development. Given the platform constraints, we are focusing on building a powerful local audio mixing tool first.
+This project is in active development, focusing on building a robust local audio mixing tool with a polished floating user interface.
 
 Our immediate next steps are:
-1.  **Add Microphone Recording:** Implement simultaneous recording from the device microphone.
-2.  **Implement Audio Mixing:** Create a mixer to combine the app and microphone audio streams in real-time.
-3.  **Playback the Mix:** Allow the user to hear the final mixed audio through their headphones or speakers.
+1.  **Build the Floating UI:** Implement the floating widget functionality, including the ability to move and expand it.
+2.  **Add Microphone Recording:** Integrate real-time audio capture from the device microphone.
+3.  **Implement Audio Mixing:** Create a mixer to combine the app and microphone audio streams in real-time.
+4.  **Local Playback:** Allow the user to hear the final mixed audio through their headphones or speakers, a key feature for the workaround.
 
-This will provide a solid foundation and a useful tool for local recording and mixing, as we continue to explore the best ways to share the audio with other apps.
+This will provide a solid foundation and a useful tool for local recording and mixing, as we continue to explore the best ways to share the audio with other apps while navigating platform constraints.
 
 ## Contributing
 
