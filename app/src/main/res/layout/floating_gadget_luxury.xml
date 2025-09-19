@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/floating_gadget_container"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_brushed_metal_dark"
+    android:padding="16dp"
+    android:layout_margin="8dp"
+    android:clipToOutline="true"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintTop_toTopOf="parent">
+
+    <!-- Outer Rose Gold Border - achieved via background drawable with inset -->
+
+    <!-- Top Input Channel (Left - Microphone) -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/mic_input_channel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginTop="8dp">
+
+        <ImageView
+            android:id="@+id/mic_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_microphone_light_gray"
+            android:contentDescription="Microphone Input Icon"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"/>
+
+        <TextView
+            android:id="@+id/mic_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="MIC"
+            android:textSize="10sp"
+            android:textColor="@color/rose_gold_accent"
+            android:fontFamily="sans-serif-light"
+            android:layout_marginTop="4dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/mic_icon"/>
+
+        <TextView
+            android:id="@+id/mic_gain_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+0 dB"
+            android:textSize="8sp"
+            android:textColor="@color/white_translucent"
+            android:fontFamily="sans-serif-thin"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/mic_label"/>
+
+        <SeekBar
+            android:id="@+id/mic_gain_slider"
+            android:layout_width="0dp"
+            android:layout_height="100dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:rotation="270"
+            android:progressTint="@color/rose_gold_accent"
+            android:thumbTint="@color/rose_gold_accent"
+            android:thumb="@drawable/thumb_rose_gold_circle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/mic_gain_text"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintWidth_percent="0.8"
+            android:layout_marginTop="8dp"/>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Top Input Channel (Right - App Audio) -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/app_audio_input_channel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_marginTop="8dp">
+
+        <ImageView
+            android:id="@+id/app_audio_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_speaker_light_gray"
+            android:contentDescription="App Audio Input Icon"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"/>
+
+        <TextView
+            android:id="@+id/app_audio_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="APP"
+            android:textSize="10sp"
+            android:textColor="@color/rose_gold_accent"
+            android:fontFamily="sans-serif-light"
+            android:layout_marginTop="4dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/app_audio_icon"/>
+
+        <TextView
+            android:id="@+id/app_audio_gain_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+0 dB"
+            android:textSize="8sp"
+            android:textColor="@color/white_translucent"
+            android:fontFamily="sans-serif-thin"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/app_audio_label"/>
+
+        <SeekBar
+            android:id="@+id/app_audio_gain_slider"
+            android:layout_width="0dp"
+            android:layout_height="100dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:rotation="270"
+            android:progressTint="@color/rose_gold_accent"
+            android:thumbTint="@color/rose_gold_accent"
+            android:thumb="@drawable/thumb_rose_gold_circle"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/app_audio_gain_text"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintWidth_percent="0.8"
+            android:layout_marginTop="8dp"/>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Central AudioLoop Logo & Waveform Display -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/center_logo_waveform"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="@id/mic_input_channel"
+        app:layout_constraintBottom_toBottomOf="@id/mic_input_channel"
+        app:layout_constraintStart_toEndOf="@id/mic_input_channel"
+        app:layout_constraintEnd_toStartOf="@id/app_audio_input_channel"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_glowing_gradient_circle"
+        android:clipChildren="true">
+
+        <TextView
+            android:id="@+id/audioloop_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="AudioLoop"
+            android:textSize="12sp"
+            android:textColor="@color/white_translucent_high"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintBottom_toTopOf="@id/waveform_display"
+            app:layout_constraintVertical_chainStyle="packed"/>
+
+        <ImageView
+            android:id="@+id/waveform_display"
+            android:layout_width="0dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_waveform_orange_blue"
+            android:scaleType="fitXY"
+            android:layout_marginTop="2dp"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            android:contentDescription="Real-time Waveform Display" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- Bottom Input Channel (Left - Microphone Toggle) - Assuming this is a mute toggle -->
+    <LinearLayout
+        android:id="@+id/mic_toggle_channel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/mic_input_channel"
+        android:layout_marginTop="16dp">
+
+        <ImageView
+            android:id="@+id/mic_toggle_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_microphone_purple"
+            android:contentDescription="Microphone Mute Toggle Icon" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="MIC"
+            android:textSize="10sp"
+            android:textColor="@color/rose_gold_accent"
+            android:fontFamily="sans-serif-light"
+            android:layout_marginTop="4dp"/>
+        <!-- Implicit Mute/Active Indicator -->
+    </LinearLayout>
+
+    <!-- Master Output Section (Center Bottom) -->
+    <LinearLayout
+        android:id="@+id/master_output_section"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        app:layout_constraintStart_toEndOf="@id/mic_toggle_channel"
+        app:layout_constraintEnd_toStartOf="@id/output_channel"
+        app:layout_constraintTop_toBottomOf="@id/center_logo_waveform"
+        android:layout_marginTop="16dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="MASTER"
+            android:textSize="10sp"
+            android:textColor="@color/rose_gold_accent"
+            android:fontFamily="sans-serif-light"/>
+
+        <!-- Master Volume Slider -->
+        <SeekBar
+            android:id="@+id/master_volume_slider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:progressTint="@color/rose_gold_accent"
+            android:thumbTint="@color/rose_gold_accent"
+            android:thumb="@drawable/thumb_rose_gold_circle"/>
+    </LinearLayout>
+
+    <!-- Bottom Output Channel (Right - Headphones) -->
+    <LinearLayout
+        android:id="@+id/output_channel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/app_audio_input_channel"
+        android:layout_marginTop="16dp">
+
+        <ImageView
+            android:id="@+id/output_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_headphones_purple"
+            android:contentDescription="Output Icon" />
+
+        <TextView
+            android:id="@+id/output_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="OUTPUT"
+            android:textSize="10sp"
+            android:textColor="@color/rose_gold_accent"
+            android:fontFamily="sans-serif-light"
+            android:layout_marginTop="4dp"/>
+        <!-- Implicit Indicator Line -->
+    </LinearLayout>
+
+    <!-- Floating Share Button -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/floating_share_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_brushed_metal_dark_rounded_rect"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginStart="8dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/output_channel"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_marginBottom="8dp"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <ImageView
+            android:id="@+id/share_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_share_white"
+            android:contentDescription="Share Button"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Share"
+            android:textSize="12sp"
+            android:textColor="@color/white"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginStart="8dp"
+            app:layout_constraintStart_toEndOf="@id/share_icon"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

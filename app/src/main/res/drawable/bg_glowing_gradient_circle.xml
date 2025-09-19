@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="80%p"
+        android:centerColor="@color/glowing_blue_start"
+        android:endColor="@color/glowing_blue_end"
+        android:startColor="@color/purple_accent" /> <!-- Added purple for a richer gradient -->
+    <!-- A slight inner shadow or glow effect could be added here if needed, but might require layer-list or different approach -->
+</shape>

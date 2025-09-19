@@ -56,8 +56,8 @@ class AudioLoopService : Service() {
 
     private val runningStateObserver = Observer<Boolean> { running ->
         Log.d(TAG, "AudioLoopService: _isRunning LiveData changed to: $running. Broadcasting update to FloatingControlsService.")
-        val updateIntent = Intent(FloatingControlsService.ACTION_UPDATE_ICON)
-        updateIntent.putExtra(FloatingControlsService.EXTRA_IS_RUNNING, running)
+        val updateIntent = Intent(FloatingControlsService.ACTION_UPDATE_STATE)
+        updateIntent.putExtra(FloatingControlsService.EXTRA_SERVICE_RUNNING, running)
         sendBroadcast(updateIntent)
     }
 
@@ -478,8 +478,8 @@ class AudioLoopService : Service() {
             }
             ACTION_REQUEST_STATE -> {
                 Log.d(TAG, "AudioLoopService: ACTION_REQUEST_STATE received. Current _isRunning: ${_isRunning.value}. Broadcasting to FloatingControlsService.")
-                val updateIntent = Intent(FloatingControlsService.ACTION_UPDATE_ICON)
-                updateIntent.putExtra(FloatingControlsService.EXTRA_IS_RUNNING, _isRunning.value ?: false)
+                val updateIntent = Intent(FloatingControlsService.ACTION_UPDATE_STATE)
+                updateIntent.putExtra(FloatingControlsService.EXTRA_SERVICE_RUNNING, _isRunning.value ?: false)
                 sendBroadcast(updateIntent)
             }
         }
