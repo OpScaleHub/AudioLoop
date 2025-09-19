@@ -4,26 +4,7 @@
     android:height="20dp"
     android:viewportWidth="150"
     android:viewportHeight="20">
-    <!-- This is a static representation. A real waveform would be dynamically drawn. -->
-    <!-- Example using multiple rectangles to simulate a waveform -->
-    <rect width="4" height="10" x="5" y="5" fillColor="@color/waveform_orange" />
-    <rect width="4" height="15" x="12" y="2.5" fillColor="@color/waveform_blue" />
-    <rect width="4" height="12" x="19" y="4" fillColor="@color/waveform_orange" />
-    <rect width="4" height="18" x="26" y="1" fillColor="@color/waveform_blue" />
-    <rect width="4" height="16" x="33" y="2" fillColor="@color/waveform_orange" />
-    <rect width="4" height="14" x="40" y="3" fillColor="@color/waveform_blue" />
-    <rect width="4" height="11" x="47" y="4.5" fillColor="@color/waveform_orange" />
-    <rect width="4" height="17" x="54" y="1.5" fillColor="@color/waveform_blue" />
-    <rect width="4" height="13" x="61" y="3.5" fillColor="@color/waveform_orange" />
-    <rect width="4" height="19" x="68" y="0.5" fillColor="@color/waveform_blue" />
-    <rect width="4" height="15" x="75" y="2.5" fillColor="@color/waveform_orange" />
-    <rect width="4" height="12" x="82" y="4" fillColor="@color/waveform_blue" />
-    <rect width="4" height="10" x="89" y="5" fillColor="@color/waveform_orange" />
-    <rect width="4" height="16" x="96" y="2" fillColor="@color/waveform_blue" />
-    <rect width="4" height="14" x="103" y="3" fillColor="@color/waveform_orange" />
-    <rect width="4" height="11" x="110" y="4.5" fillColor="@color/waveform_blue" />
-    <rect width="4" height="18" x="117" y="1" fillColor="@color/waveform_orange" />
-    <rect width="4" height="13" x="124" y="3.5" fillColor="@color/waveform_blue" />
-    <rect width="4" height="17" x="131" y="1.5" fillColor="@color/waveform_orange" />
-    <rect width="4" height="14" x="138" y="3" fillColor="@color/waveform_blue" />
+    <path
+        android:fillColor="@color/waveform_orange"
+        android:pathData="M0,10 C15,5 30,15 45,10 S75,5 90,10 120,15 135,10 150,5 150,5 L150,15 C135,20 120,10 105,15 S75,20 60,15 30,10 15,15 0,20 0,20 Z" />
 </vector>
