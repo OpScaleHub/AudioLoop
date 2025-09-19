@@ -1,13 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floating_widget_container"
     android:layout_width="wrap_content"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:gravity="center_horizontal"
+    android:padding="8dp">
 
     <ImageView
         android:id="@+id/floating_widget_icon"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:src="@mipmap/ic_launcher_round"
-        android:contentDescription="AudioLoop Control" />
+        android:contentDescription="AudioLoop Control Icon" />
 
-</FrameLayout>
+    <ImageButton
+        android:id="@+id/floating_widget_close_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginTop="8dp"
+        android:src="@drawable/ic_close"
+        android:contentDescription="Close Floating Controls"
+        android:visibility="gone" />
+
+</LinearLayout>
