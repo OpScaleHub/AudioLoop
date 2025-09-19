@@ -60,6 +60,9 @@ class AudioLoopService : Service() {
         sendBroadcast(updateIntent)
     }
 
+    // Declare savedAudioMode here
+    private var savedAudioMode: Int = 0
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "AudioLoopService: onCreate")
@@ -99,10 +102,10 @@ class AudioLoopService : Service() {
 
         if (currentMediaProjection != null) {
             val arFormat = AudioFormat.Builder().setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(APP_CHANNEL_CONFIG_IN).build()
-            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!).addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME).build()
+            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(currentMediaProjection!!).addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME).addMatchingUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build() // Added USAGE_VOICE_COMMUNICATION
             appRecordBufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, APP_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING) * 2
-            if (appRecordBufferSizeInBytes > 0) { try { appAudioRecord = AudioRecord.Builder().setAudioFormat(arFormat).setAudioPlaybackCaptureConfig(captureConfig).setBufferSizeInBytes(appRecordBufferSizeInBytes).build(); if (appAudioRecord?.state != AudioRecord.STATE_INITIALIZED) { Log.e(TAG, "AudioLoopService: App AR init failed."); appRecordOk = false } else { appRecordOk = true; } } catch (e: Exception) { Log.e(TAG, "AudioLoopService: App AR creation ex", e); appRecordOk = false } } else { Log.e(TAG, "AudioLoopService: App AR invalid buffer size"); appRecordOk = false }
-        } else { Log.w(TAG, "AudioLoopService: MediaProjection not available. App audio capture skipped."); appAudioRecord = null; appRecordOk = true; }
+            if (appRecordBufferSizeInBytes > 0) { try { appAudioRecord = AudioRecord.Builder().setAudioFormat(arFormat).setAudioPlaybackCaptureConfig(captureConfig).setBufferSizeInBytes(appRecordBufferSizeInBytes).build(); if (appAudioRecord?.state != AudioRecord.STATE_INITIALIZED) { Log.e(TAG, "AudioLoopService: App AR init failed."); appRecordOk = false } else { appRecordOk = true; } } catch (e: Exception) { Log.e(TAG, "AudioLoopService: App AR creation ex", e); appRecordOk = false } } else { Log.e(TAG, "AudioLoopService: App AR invalid buffer size"); appRecordOk = false } }
+        else { Log.w(TAG, "AudioLoopService: MediaProjection not available. App audio capture skipped."); appAudioRecord = null; appRecordOk = true; }
 
         val micFormat = AudioFormat.Builder().setEncoding(AUDIO_FORMAT_ENCODING).setSampleRate(SAMPLE_RATE).setChannelMask(MIC_CHANNEL_CONFIG_IN).build()
         micRecordBufferSizeInBytes = AudioRecord.getMinBufferSize(SAMPLE_RATE, MIC_CHANNEL_CONFIG_IN, AUDIO_FORMAT_ENCODING) * 2
@@ -122,7 +125,7 @@ class AudioLoopService : Service() {
         isCapturingMicAudio = micAudioRecord != null && micRecordOk
 
         if (!isCapturingAppAudio && !isCapturingMicAudio) { Log.e(TAG, "AudioLoopService: No audio source could be initialized."); _isRunning.postValue(false); return false }
-        
+
         if (isCapturingAppAudio) appAudioRecord?.startRecording()
         if (isCapturingMicAudio) micAudioRecord?.startRecording()
         audioTrack?.play()
@@ -131,15 +134,15 @@ class AudioLoopService : Service() {
 
         audioProcessingThread = Thread { /* ... audio processing loop ... */
             Log.d(TAG, "AudioLoopService: Audio processing thread started.")
-             val appBuf = if (isCapturingAppAudio && appAudioRecord != null && appRecordBufferSizeInBytes > 0) ByteBuffer.allocateDirect(appRecordBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
+            val appBuf = if (isCapturingAppAudio && appAudioRecord != null && appRecordBufferSizeInBytes > 0) ByteBuffer.allocateDirect(appRecordBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
             val micBuf = if (isCapturingMicAudio && micAudioRecord != null && micRecordBufferSizeInBytes > 0) ByteBuffer.allocateDirect(micRecordBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
             val playbackBuf = if(audioTrackOk && trackBufferSizeInBytes > 0) ByteBuffer.allocateDirect(trackBufferSizeInBytes).order(ByteOrder.LITTLE_ENDIAN) else null
 
             if (playbackBuf == null) { Log.e(TAG, "AudioLoopService: Failed to allocate playbackBuf."); _isRunning.postValue(false); return@Thread }
-            
+
             val appIsStereo = APP_CHANNEL_CONFIG_IN == AudioFormat.CHANNEL_IN_STEREO
 
-            while ((isCapturingAppAudio || isCapturingMicAudio) && shouldBePlayingBasedOnFocus && audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING && _isRunning.value == true) { 
+            while ((isCapturingAppAudio || isCapturingMicAudio) && shouldBePlayingBasedOnFocus && audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING && _isRunning.value == true) {
                 var appBytesRead = 0
                 if (isCapturingAppAudio && appAudioRecord != null && appBuf != null) {
                     appBuf.clear(); appBytesRead = appAudioRecord!!.read(appBuf, appBuf.capacity())
@@ -151,7 +154,7 @@ class AudioLoopService : Service() {
                     if (micBytesRead < 0) { Log.e(TAG, "Mic audio read error: $micBytesRead"); isCapturingMicAudio = false; } else if (micBytesRead > 0) micBuf.flip()
                 }
                 if ((!isCapturingAppAudio || appBytesRead <= 0) && (!isCapturingMicAudio || micBytesRead <= 0)) {
-                    if (!isCapturingAppAudio && !isCapturingMicAudio) break 
+                    if (!isCapturingAppAudio && !isCapturingMicAudio) break
                     try { Thread.sleep(10) } catch (e: InterruptedException) { Thread.currentThread().interrupt(); break }; continue
                 }
                 playbackBuf.clear()
@@ -173,7 +176,7 @@ class AudioLoopService : Service() {
             }
             Log.d(TAG, "AudioLoopService: Audio processing thread finished. _isRunning.value: ${_isRunning.value}")
             if (_isRunning.value == true && !(isCapturingAppAudio || isCapturingMicAudio)) {
-                 _isRunning.postValue(false)
+                _isRunning.postValue(false)
             }
         }.apply { name = "AudioLoopMixThread"; start() }
         return true
@@ -181,11 +184,11 @@ class AudioLoopService : Service() {
 
     private fun stopAudioProcessing() {
         Log.d(TAG, "AudioLoopService: Stopping audio processing...")
-        if (_isRunning.value == true) { 
-             _isRunning.postValue(false)
+        if (_isRunning.value == true) {
+            _isRunning.postValue(false)
         }
         isCapturingAppAudio = false; isCapturingMicAudio = false;
-        
+
         audioProcessingThread?.interrupt()
         try { audioProcessingThread?.join(500) }
         catch (e: InterruptedException) { Log.w(TAG, "AudioLoopService: Join interrupted", e); Thread.currentThread().interrupt() }
@@ -197,13 +200,13 @@ class AudioLoopService : Service() {
         Log.d(TAG, "AudioLoopService: All audio resources released.")
     }
 
-    private fun startForegroundNotification() { /* ... same as before ... */
-         val statusText = if (_isRunning.value == true) "Looping Audio" else "Ready"
+    private fun startForegroundNotification() {
+        val statusText = if (_isRunning.value == true) "Looping Audio" else "Ready"
         val channelId = "AudioLoopServiceChannel"; if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { val channel = NotificationChannel(channelId, "Audio Loop Service", NotificationManager.IMPORTANCE_LOW); notificationManager = getSystemService(NotificationManager::class.java); notificationManager?.createNotificationChannel(channel) }; val notification: Notification = NotificationCompat.Builder(this, channelId).setContentTitle("AudioLoop").setContentText(statusText).setSmallIcon(R.mipmap.ic_launcher).setOngoing(true).build(); try { startForeground(SERVICE_NOTIFICATION_ID, notification) } catch (e: Exception) { Log.e(TAG, "AudioLoopService: Error starting fg", e) }
     }
 
     private fun clearProjectionAndAudioInstance() { Log.d(TAG, "AudioLoopService: Clearing MediaProjection and stopping audio."); stopAudioProcessing(); currentMediaProjection?.unregisterCallback(mediaProjectionCallback); currentMediaProjection?.stop(); currentMediaProjection = null; startForegroundNotification() }
-    
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val currentAction = intent?.action // Use a local val for the action
         Log.d(TAG, "AudioLoopService: onStartCommand, action: $currentAction, current _isRunning: ${_isRunning.value}")
@@ -213,14 +216,14 @@ class AudioLoopService : Service() {
                 if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                     startAudioProcessing()
                 } else { Log.e(TAG, "AudioLoopService: RECORD_AUDIO perm not granted for START."); _isRunning.postValue(false) }
-                startForegroundNotification() 
+                startForegroundNotification()
             }
             ACTION_PROCESS_AUDIO_STOP -> { stopAudioProcessing(); startForegroundNotification() }
             ACTION_STOP_SERVICE -> { clearProjectionAndAudioInstance(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
             ACTION_SETUP_PROJECTION -> {
-                stopAudioProcessing() 
+                stopAudioProcessing()
                 if (currentMediaProjection != null) { currentMediaProjection?.unregisterCallback(mediaProjectionCallback); currentMediaProjection?.stop(); currentMediaProjection = null }
-                
+
                 val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
                 val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent?.getParcelableExtra(EXTRA_DATA_INTENT, Intent::class.java)
@@ -230,43 +233,43 @@ class AudioLoopService : Service() {
                 }
 
                 if (resultCode == Activity.RESULT_OK && data != null) {
-                    try { 
+                    try {
                         val projection = mediaProjectionManager.getMediaProjection(resultCode, data)
-                        if (projection != null) { 
+                        if (projection != null) {
                             currentMediaProjection = projection
                             currentMediaProjection?.registerCallback(mediaProjectionCallback, null)
                             Log.d(TAG, "AudioLoopService: MediaProjection obtained.")
                             _isRunning.postValue(false) // Update state as projection is set up but not yet looping
-                        } else { 
+                        } else {
                             Log.e(TAG, "AudioLoopService: getMediaProjection returned null.")
-                            _isRunning.postValue(false) 
+                            _isRunning.postValue(false)
                         }
-                    } catch (e: Exception) { 
+                    } catch (e: Exception) {
                         Log.e(TAG, "AudioLoopService: Ex in ACTION_SETUP_PROJECTION", e)
-                        _isRunning.postValue(false) 
+                        _isRunning.postValue(false)
                     }
-                } else { 
+                } else {
                     Log.w(TAG, "AudioLoopService: ACTION_SETUP_PROJECTION failed. ResultCode: $resultCode, Data is null: ${data==null}")
-                    _isRunning.postValue(false) 
+                    _isRunning.postValue(false)
                 }
-                startForegroundNotification() 
+                startForegroundNotification()
             }
             ACTION_REQUEST_STATE -> {
-                 Log.d(TAG, "AudioLoopService: ACTION_REQUEST_STATE received. Current _isRunning: ${_isRunning.value}. Broadcasting to FloatingControlsService.")
-                 val updateIntent = Intent(FloatingControlsService.ACTION_UPDATE_ICON)
-                 updateIntent.putExtra(FloatingControlsService.EXTRA_IS_RUNNING, _isRunning.value ?: false)
-                 sendBroadcast(updateIntent)
+                Log.d(TAG, "AudioLoopService: ACTION_REQUEST_STATE received. Current _isRunning: ${_isRunning.value}. Broadcasting to FloatingControlsService.")
+                val updateIntent = Intent(FloatingControlsService.ACTION_UPDATE_ICON)
+                updateIntent.putExtra(FloatingControlsService.EXTRA_IS_RUNNING, _isRunning.value ?: false)
+                sendBroadcast(updateIntent)
             }
         }
         return START_NOT_STICKY
     }
 
     private val mediaProjectionCallback = object : MediaProjection.Callback() { override fun onStop() { super.onStop(); Log.w(TAG, "AudioLoopService: Projection stopped externally."); clearProjectionAndAudioInstance() } }
-    
-    override fun onDestroy() { 
+
+    override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "AudioLoopService: onDestroy. Removing LiveData observer.")
-        _isRunning.removeObserver(runningStateObserver) 
+        _isRunning.removeObserver(runningStateObserver)
         abandonAudioFocus()
         clearProjectionAndAudioInstance()
     }
