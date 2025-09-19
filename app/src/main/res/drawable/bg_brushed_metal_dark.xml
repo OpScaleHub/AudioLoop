@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/brushed_metal_dark" />
+    <corners android:radius="16dp" /> <!-- Soft rounded corners for the main widget -->
+    <!-- In a real scenario, a brushed metal texture would be more complex, possibly involving layer-list or NinePatchDrawables. For simplicity, we use a solid color with rounded corners. -->
+</shape>
