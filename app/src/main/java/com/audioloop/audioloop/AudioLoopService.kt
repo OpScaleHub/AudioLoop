@@ -23,7 +23,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Observer
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.min // Import min function
+import kotlin.math.min
 
 class AudioLoopService : Service() {
 
@@ -304,14 +304,17 @@ class AudioLoopService : Service() {
                         var appRightShort: Short = 0
                         var micMonoShort: Short = 0
 
-                        // Read from app buffer if available
+                        var appSampleAvailable = false
                         if (isCapturingAppAudio && appBuf != null && appBuf.hasRemaining()) {
                             appLeftShort = appBuf.short
                             appRightShort = if (appIsStereo) appBuf.short else appLeftShort
+                            appSampleAvailable = true
                         }
-                        // Read from mic buffer if available
+
+                        var micSampleAvailable = false
                         if (isCapturingMicAudio && micBuf != null && micBuf.hasRemaining()) {
                             micMonoShort = micBuf.short
+                            micSampleAvailable = true
                         }
 
                         // Mix audio: Apply gain to mic audio and add to app audio
@@ -324,8 +327,12 @@ class AudioLoopService : Service() {
                         playbackBuf.putShort(finalRight)
                     }
 
-                    // Write the mixed audio to the AudioTrack
-                    val written = audioTrack?.write(playbackBuf!!, 0, playbackBuf!!.limit(), AudioTrack.WRITE_BLOCKING)
+                    // Copy data from ByteBuffer to ByteArray for writing
+                    val audioDataByteArray = ByteArray(playbackBuf.remaining())
+                    playbackBuf.get(audioDataByteArray)
+
+                    // Write the mixed audio to the AudioTrack using the ByteArray overload
+                    val written = audioTrack?.write(audioDataByteArray, 0, audioDataByteArray.size)
                     if (written != null && written < 0) {
                         Log.e(TAG, "AudioTrack write error: $written")
                     }
