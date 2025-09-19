@@ -1,13 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="white">#FFFFFF</color>
-    <color name="rose_gold_accent">#B76E79</color> <!-- Example Rose Gold color -->
-    <color name="white_translucent">#B3FFFFFF</color> <!-- White with alpha -->
-    <color name="white_translucent_high">#E6FFFFFF</color> <!-- White with higher alpha -->
-    <color name="brushed_metal_dark">#2A2A2A</color> <!-- Dark gray for brushed metal -->
-    <color name="glowing_blue_start">#00BFFF</color> <!-- Deep Sky Blue -->
-    <color name="glowing_blue_end">#87CEEB</color> <!-- Sky Blue -->
-    <color name="waveform_orange">#FFA500</color> <!-- Orange -->
-    <color name="waveform_blue">#1E90FF</color> <!-- Dodger Blue -->
-    <color name="purple_accent">#9370DB</color> <!-- Medium Purple -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="rose_gold_accent">#B76E79</color>
+    <color name="white_translucent">#80FFFFFF</color>
+    <color name="white_translucent_high">#CCFFFFFF</color>
+    <color name="dark_charcoal_gray">#333333</color>
+    <color name="glowing_neon_blue">#00F0FF</color>
+    <color name="glowing_neon_cyan">#00FFFF</color>
+    <color name="glowing_orange">#FFA500</color>
+    <color name="glowing_blue">#0000FF</color>
+    <color name="waveform_orange">#FFA500</color>
+    <color name="waveform_blue">#00BFFF</color>
+    <color name="glowing_blue_start">#00F0FF</color>
+    <color name="glowing_blue_end">#00A5FF</color>
+    <color name="purple_accent">#BB86FC</color>
+    <color name="brushed_metal_dark">#2C2C2C</color>
 </resources>

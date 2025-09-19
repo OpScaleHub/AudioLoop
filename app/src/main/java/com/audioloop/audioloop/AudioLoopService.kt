@@ -6,8 +6,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.*
 import android.media.projection.MediaProjection
@@ -64,6 +66,54 @@ class AudioLoopService : Service() {
     // Declare savedAudioMode here
     private var savedAudioMode: Int = 0
 
+    // UI Control States
+    @Volatile private var masterVolume: Float = 0.5f // Default to 50%
+    @Volatile private var isMicMuted: Boolean = false
+    @Volatile private var micGain: Int = 0 // Default to 0dB, assuming 0-100 range from UI
+    @Volatile private var appAudioGain: Int = 0 // Default to 0dB, assuming 0-100 range from UI
+
+
+    private val controlReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent == null) return
+            Log.d(TAG, "AudioLoopService: Received broadcast: ${intent.action}")
+            when (intent.action) {
+                FloatingControlsService.ACTION_UPDATE_VOLUME -> {
+                    val volume = intent.getIntExtra(FloatingControlsService.EXTRA_VOLUME_LEVEL, 50)
+                    masterVolume = volume / 100f // Convert 0-100 to 0.0-1.0
+                    audioTrack?.setVolume(masterVolume) // Apply master volume to AudioTrack
+                    Log.d(TAG, "AudioLoopService: Master volume updated to $masterVolume")
+                }
+                FloatingControlsService.ACTION_SHARE -> {
+                    Log.d(TAG, "AudioLoopService: Share action received. Implementing placeholder.")
+                    // TODO: Implement actual sharing logic here (e.g., share a recorded file)
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, "Check out AudioLoop!")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(Intent.createChooser(shareIntent, "Share via"))
+                }
+                FloatingControlsService.ACTION_TOGGLE_MIC_MUTE -> {
+                    val isMuted = intent.getBooleanExtra(FloatingControlsService.EXTRA_IS_MIC_MUTED, false)
+                    isMicMuted = isMuted
+                    Log.d(TAG, "AudioLoopService: Mic mute toggled to $isMicMuted")
+                    // The mute logic will be applied in the audio processing thread
+                }
+                FloatingControlsService.ACTION_UPDATE_MIC_GAIN -> {
+                    val gain = intent.getIntExtra(FloatingControlsService.EXTRA_MIC_GAIN_LEVEL, 0)
+                    micGain = gain
+                    Log.d(TAG, "AudioLoopService: Mic gain updated to $micGain")
+                }
+                FloatingControlsService.ACTION_UPDATE_APP_AUDIO_GAIN -> {
+                    val gain = intent.getIntExtra(FloatingControlsService.EXTRA_APP_AUDIO_GAIN_LEVEL, 0)
+                    appAudioGain = gain
+                    Log.d(TAG, "AudioLoopService: App audio gain updated to $appAudioGain")
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "AudioLoopService: onCreate")
@@ -73,6 +123,16 @@ class AudioLoopService : Service() {
         _isRunning.postValue(false) // Initial state
         _isRunning.observeForever(runningStateObserver) // Start observing
         setupAudioFocusListener()
+
+        // Register the control receiver
+        val filter = IntentFilter().apply {
+            addAction(FloatingControlsService.ACTION_UPDATE_VOLUME)
+            addAction(FloatingControlsService.ACTION_SHARE)
+            addAction(FloatingControlsService.ACTION_TOGGLE_MIC_MUTE)
+            addAction(FloatingControlsService.ACTION_UPDATE_MIC_GAIN)
+            addAction(FloatingControlsService.ACTION_UPDATE_APP_AUDIO_GAIN)
+        }
+        registerReceiver(controlReceiver, filter)
     }
 
     private fun setupAudioFocusListener() {
@@ -264,7 +324,7 @@ class AudioLoopService : Service() {
                     }
                 }
 
-                if (isCapturingMicAudio && micAudioRecord != null) {
+                if (isCapturingMicAudio && micAudioRecord != null && !isMicMuted) { // Apply mic mute here
                     micBytesRead = micAudioRecord!!.read(micBuf!!, micBuf!!.capacity())
                     if (micBytesRead < 0) {
                         Log.e(TAG, "Mic audio read error: $micBytesRead")
@@ -317,11 +377,18 @@ class AudioLoopService : Service() {
                             micSampleAvailable = true
                         }
 
-                        // Mix audio: Apply gain to mic audio and add to app audio
-                        val boostedMicInt = if (micSampleAvailable) (micMonoShort.toInt() * MIC_GAIN_FACTOR).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()) else 0
+                        // Apply individual channel gains and mix audio
+                        // Convert UI gain (0-100) to a factor (e.g., 0.0 to 2.0)
+                        val micGainFactor = 1.0f + (micGain / 100f) // Example: 0 (1.0x) to 100 (2.0x)
+                        val appAudioGainFactor = 1.0f + (appAudioGain / 100f) // Example: 0 (1.0x) to 100 (2.0x)
 
-                        val finalLeft = if (appSampleAvailable) (appLeftShort.toInt() + boostedMicInt).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort() else boostedMicInt.toShort()
-                        val finalRight = if (appSampleAvailable) (appRightShort.toInt() + boostedMicInt).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort() else boostedMicInt.toShort()
+                        val boostedMicInt = if (micSampleAvailable) (micMonoShort.toInt() * micGainFactor) else 0f
+                        val boostedAppLeftInt = if (appSampleAvailable) (appLeftShort.toInt() * appAudioGainFactor) else 0f
+                        val boostedAppRightInt = if (appSampleAvailable) (appRightShort.toInt() * appAudioGainFactor) else 0f
+
+
+                        val finalLeft = (boostedAppLeftInt + boostedMicInt).coerceIn(Short.MIN_VALUE.toFloat(), Short.MAX_VALUE.toFloat()).toInt().toShort()
+                        val finalRight = (boostedAppRightInt + boostedMicInt).coerceIn(Short.MIN_VALUE.toFloat(), Short.MAX_VALUE.toFloat()).toInt().toShort()
 
                         playbackBuf.putShort(finalLeft)
                         playbackBuf.putShort(finalRight)
@@ -500,6 +567,7 @@ class AudioLoopService : Service() {
         _isRunning.removeObserver(runningStateObserver)
         abandonAudioFocus()
         clearProjectionAndAudioInstance()
+        unregisterReceiver(controlReceiver) // Unregister the receiver
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -507,7 +575,7 @@ class AudioLoopService : Service() {
     companion object {
         private const val TAG = "AudioLoopApp" // Unified TAG
         private const val SERVICE_NOTIFICATION_ID = 12345
-        private const val MIC_GAIN_FACTOR = 8
+        // private const val MIC_GAIN_FACTOR = 8 // Removed, now dynamic
         const val ACTION_START_SERVICE = "com.audioloop.audioloop.ACTION_START_SERVICE"
         const val ACTION_STOP_SERVICE = "com.audioloop.audioloop.ACTION_STOP_SERVICE"
         const val ACTION_SETUP_PROJECTION = "com.audioloop.audioloop.ACTION_SETUP_PROJECTION"

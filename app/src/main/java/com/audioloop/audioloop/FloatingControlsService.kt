@@ -66,6 +66,8 @@ class FloatingControlsService : Service() {
         const val EXTRA_IS_MIC_MUTED = "EXTRA_IS_MIC_MUTED"
         const val ACTION_UPDATE_MIC_GAIN = "ACTION_UPDATE_MIC_GAIN"
         const val EXTRA_MIC_GAIN_LEVEL = "EXTRA_MIC_GAIN_LEVEL"
+        const val ACTION_UPDATE_APP_AUDIO_GAIN = "ACTION_UPDATE_APP_AUDIO_GAIN"
+        const val EXTRA_APP_AUDIO_GAIN_LEVEL = "EXTRA_APP_AUDIO_GAIN_LEVEL"
     }
 
     private val stateUpdateReceiver = object : BroadcastReceiver() {
