@@ -49,8 +49,8 @@ class AudioLoopService : Service() {
     private val PLAYBACK_BYTES_PER_FRAME = 4 // Stereo PCM16
 
     private val playbackAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
-        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
 
     private val runningStateObserver = Observer<Boolean> { running ->
@@ -88,6 +88,8 @@ class AudioLoopService : Service() {
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun startAudioProcessing(): Boolean {
         Log.d(TAG, "AudioLoopService: Attempting startAudioProcessing...")
+        this.savedAudioMode = audioManager.mode
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { Log.e(TAG, "AudioLoopService: RECORD_AUDIO permission not granted."); _isRunning.postValue(false); return false }
         if (audioProcessingThread?.isAlive == true) { Log.w(TAG, "AudioLoopService: Thread already running."); return true }
         if (!requestAudioFocus()) { _isRunning.postValue(false); return false }
