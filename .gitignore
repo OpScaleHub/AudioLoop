@@ -20,6 +20,9 @@ out/
 .gradle/
 build/
 
+# Allow gradle wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
+
 # Local configuration file (sdk path, etc)
 local.properties
 
