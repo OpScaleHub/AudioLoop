@@ -1,4 +1,3 @@
-
 name: Release
 
 on:
@@ -100,7 +99,7 @@ jobs:
       - name: Sign the APK
         if: ${{ env.DECODE_KEYSTORE_ENABLED == 'true' }}
         run: |
-          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build/outputs/apk/release/app-release-unsigned.apk ${{ secrets.SIGNING_KEY_ALIAS }}
+          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build[...]
           zipalign -v 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-signed.apk
 
       - name: Upload APK artifact
