@@ -67,8 +67,8 @@
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:rotation="270"
-                android:progressTint="?attr/colorAccent"
-                android:thumbTint="?attr/colorAccent"
+                android:progressTint="@color/rose_gold_accent"
+                android:thumbTint="@color/rose_gold_accent"
                 android:thumb="@drawable/thumb_rose_gold_circle"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
@@ -129,8 +129,8 @@
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:rotation="270"
-                android:progressTint="?attr/colorAccent"
-                android:thumbTint="?attr/colorAccent"
+                android:progressTint="@color/rose_gold_accent"
+                android:thumbTint="@color/rose_gold_accent"
                 android:thumb="@drawable/thumb_rose_gold_circle"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
@@ -238,8 +238,8 @@
                 android:id="@+id/master_volume_slider"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:progressTint="?attr/colorAccent"
-                android:thumbTint="?attr/colorAccent"
+                android:progressTint="@color/rose_gold_accent"
+                android:thumbTint="@color/rose_gold_accent"
                 android:thumb="@drawable/thumb_rose_gold_circle"/>
         </LinearLayout>
 

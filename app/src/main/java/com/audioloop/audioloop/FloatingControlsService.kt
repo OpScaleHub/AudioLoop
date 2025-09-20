@@ -30,6 +30,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat // Added import
 
 class FloatingControlsService : Service() {
 
@@ -92,11 +93,7 @@ class FloatingControlsService : Service() {
 
         mFloatingWidgetView = inflater.inflate(R.layout.floating_gadget_luxury, null)
 
-        val layoutFlag: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+        val layoutFlag: Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
         overlayParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -176,11 +173,12 @@ class FloatingControlsService : Service() {
             addAction(ACTION_UPDATE_STATE)
             addAction(ACTION_TOGGLE_MIC_MUTE)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            registerReceiver(stateUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(stateUpdateReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            stateUpdateReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         setupTouchListener()
         updateUIForServiceState()
@@ -199,19 +197,18 @@ class FloatingControlsService : Service() {
         val channelId = "AudioLoop_Floating_Controls_Channel"
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "AudioLoop Floating Controls",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Controls for the AudioLoop floating widget"
-                setSound(null, null)
-                enableLights(false)
-                enableVibration(false)
-            }
-            notificationManager.createNotificationChannel(channel)
+        // No need for Build.VERSION.SDK_INT check here, as minSdk is 31
+        val channel = NotificationChannel(
+            channelId,
+            "AudioLoop Floating Controls",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Controls for the AudioLoop floating widget"
+            setSound(null, null)
+            enableLights(false)
+            enableVibration(false)
         }
+        notificationManager.createNotificationChannel(channel)
 
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
