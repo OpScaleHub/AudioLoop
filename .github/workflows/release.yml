@@ -42,7 +42,7 @@ jobs:
 
       - name: Decode Keystore
         id: decode_keystore
-        if: secrets.SIGNING_KEY_STORE_BASE64 != ''
+        if: ${{ secrets.SIGNING_KEY_STORE_BASE64 != '' }}
         uses: timheuer/base64-to-file@v1.2
         with:
           fileName: 'keystore.jks'
