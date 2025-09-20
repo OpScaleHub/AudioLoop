@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
+    <color name="purple_200">#FFB6C1</color> <!-- LightPink - warmer purple/pink -->
+    <color name="purple_500">#DC143C</color> <!-- Crimson - warm red -->
+    <color name="purple_700">#8B0000</color> <!-- DarkRed - deep warm red -->
+    <color name="teal_200">#98FB98</color> <!-- PaleGreen - warmer light green -->
+    <color name="teal_700">#228B22</color> <!-- ForestGreen - warmer deep green -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="rose_gold_accent">#B76E79</color>
