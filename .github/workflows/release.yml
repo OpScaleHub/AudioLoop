@@ -40,10 +40,9 @@ jobs:
         with:
           version_format: '{{major}}.{{minor}}.{{patch}}'
           tag_prefix: 'v'
-          major_pattern: "(BREAKING CHANGE:|feat!:)"
+          major_pattern: "BREAKING CHANGE:"
           minor_pattern: "feat:"
-          patch_pattern: "fix:"
-          increment_override: ${{ github.event.inputs.version_increment != 'auto' && github.event.inputs.version_increment || '' }}
+          search_commit_body: true
           
       - name: Calculate Android version code
         id: version_code
@@ -69,9 +68,14 @@ jobs:
 
       - name: Update version in build.gradle
         run: |
+          version="${{ needs.calculate-version.outputs.version }}"
+          # Convert version to version code (e.g., 1.2.3 -> 10203)
+          IFS='.' read -r major minor patch <<< "$version"
+          version_code=$((major * 10000 + minor * 100 + patch))
+          
           # Update both versionCode and versionName
-          sed -i "/versionCode = / c\        versionCode = ${{ needs.calculate-version.outputs.version_code }}" app/build.gradle.kts
-          sed -i "/versionName = / c\        versionName = \"${{ needs.calculate-version.outputs.version }}\"" app/build.gradle.kts
+          sed -i "/versionCode = / c\        versionCode = $version_code" app/build.gradle.kts
+          sed -i "/versionName = / c\        versionName = \"$version\"" app/build.gradle.kts
 
       - name: Check for signing keystore secret
         id: check_keystore_secret
