@@ -5,7 +5,22 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - '.editorconfig'
   workflow_dispatch:
+    inputs:
+      version_increment:
+        description: 'Version increment type (major, minor, patch)'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - major
+          - minor
+          - patch
 
 jobs:
   calculate-version:
@@ -13,17 +28,32 @@ jobs:
     outputs:
       version_tag: ${{ steps.semver.outputs.version_tag }}
       version: ${{ steps.semver.outputs.version }}
+      version_code: ${{ steps.version_code.outputs.code }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Required for semantic-version to analyze history
+          
       - name: Calculate next semantic version
         id: semver
         uses: paulhatch/semantic-version@v5.4.0
         with:
           version_format: '{{major}}.{{minor}}.{{patch}}'
           tag_prefix: 'v'
+          major_pattern: "(BREAKING CHANGE:|feat!:)"
+          minor_pattern: "feat:"
+          patch_pattern: "fix:"
+          increment_override: ${{ github.event.inputs.version_increment != 'auto' && github.event.inputs.version_increment || '' }}
+          
+      - name: Calculate Android version code
+        id: version_code
+        run: |
+          # Extract major, minor, patch from version
+          IFS='.' read -r major minor patch <<< "${{ steps.semver.outputs.version }}"
+          # Calculate version code: major * 10000 + minor * 100 + patch
+          version_code=$((major * 10000 + minor * 100 + patch))
+          echo "code=$version_code" >> $GITHUB_OUTPUT
 
   android-build-and-publish:
     needs: calculate-version
@@ -40,7 +70,9 @@ jobs:
 
       - name: Update version in build.gradle
         run: |
-          sed -i "s/versionName "1.0"/versionName "${{ needs.calculate-version.outputs.version }}"/g" app/build.gradle.kts
+          # Update both versionCode and versionName
+          sed -i "/versionCode = / c\        versionCode = ${{ needs.calculate-version.outputs.version_code }}" app/build.gradle.kts
+          sed -i "/versionName = / c\        versionName = \"${{ needs.calculate-version.outputs.version }}\"" app/build.gradle.kts
 
       - name: Check for signing keystore secret
         id: check_keystore_secret
@@ -88,14 +120,25 @@ jobs:
         with:
           name: app-release-signed-apk
 
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
+          echo "## What's New" >> $GITHUB_ENV
+          echo "This is version ${{ needs.calculate-version.outputs.version }} (build ${{ needs.calculate-version.outputs.version_code }})" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "### Changes" >> $GITHUB_ENV
+          git log $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD^)..HEAD --pretty=format:"- %s" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Create Release
         uses: softprops/action-gh-release@v2.0.4
         with:
           tag_name: ${{ needs.calculate-version.outputs.version_tag }}
           name: Release ${{ needs.calculate-version.outputs.version_tag }}
-          body: ${{ needs.calculate-version.outputs.changelog }}
+          body: ${{ env.RELEASE_NOTES }}
           draft: false
           prerelease: false
-          files: app-release-signed-apk/app-release-signed.apk # Path to the downloaded artifact
+          files: app-release-signed-apk/app-release-signed.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
