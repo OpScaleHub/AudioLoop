@@ -3,8 +3,8 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
 
 jobs:
   release:
@@ -31,7 +31,7 @@ jobs:
 
       - name: Update version in build.gradle
         run: |
-          sed -i "s/versionName \"1.0\"/versionName \"${{ steps.version.outputs.version }}\"/g" app/build.gradle.kts
+          sed -i "s/versionName "1.0"/versionName "${{ steps.version.outputs.version }}"/g" app/build.gradle.kts
 
       - name: Check for signing keystore secret
         id: check_keystore_secret
