@@ -67,15 +67,17 @@ jobs:
           java-version: '17'
 
       - name: Update version in build.gradle
+        env:
+          VERSION: ${{ needs.calculate-version.outputs.version }}
         run: |
-          version="${{ needs.calculate-version.outputs.version }}"
-          # Convert version to version code (e.g., 1.2.3 -> 10203)
-          IFS='.' read -r major minor patch <<< "$version"
+          # Extract major, minor, patch from version
+          IFS='.' read -r major minor patch <<< "$VERSION"
+          # Calculate version code: major * 10000 + minor * 100 + patch
           version_code=$((major * 10000 + minor * 100 + patch))
           
           # Update both versionCode and versionName
-          sed -i "/versionCode = / c\        versionCode = $version_code" app/build.gradle.kts
-          sed -i "/versionName = / c\        versionName = \"$version\"" app/build.gradle.kts
+          sed -i "s/versionCode = .*/versionCode = $version_code/" app/build.gradle.kts
+          sed -i "s/versionName = .*/versionName = \"$VERSION\"/" app/build.gradle.kts
 
       - name: Check for signing keystore secret
         id: check_keystore_secret
