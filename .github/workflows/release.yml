@@ -5,15 +5,33 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  release:
+  calculate-version:
     runs-on: ubuntu-latest
+    outputs:
+      version_tag: ${{ steps.semver.outputs.version_tag }}
+      version: ${{ steps.semver.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Required for semantic-version to analyze history
+      - name: Calculate next semantic version
+        id: semver
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          format: '{{major}}.{{minor}}.{{patch}}'
+          tag_prefix: 'v'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  android-build-and-publish:
+    needs: calculate-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Install JDK 17
         uses: actions/setup-java@v4
@@ -21,17 +39,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Semantic Version
-        id: version
-        uses: paulhatch/semantic-version@v5.4.0
-        with:
-          format: '{{major}}.{{minor}}.{{patch}}'
-          tag_prefix: 'v'
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Update version in build.gradle
         run: |
-          sed -i "s/versionName "1.0"/versionName "${{ steps.version.outputs.version }}"/g" app/build.gradle.kts
+          sed -i "s/versionName "1.0"/versionName "${{ needs.calculate-version.outputs.version }}"/g" app/build.gradle.kts
 
       - name: Check for signing keystore secret
         id: check_keystore_secret
@@ -62,14 +72,31 @@ jobs:
           jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build/outputs/apk/release/app-release-unsigned.apk ${{ secrets.SIGNING_KEY_ALIAS }}
           zipalign -v 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-signed.apk
 
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-signed-apk
+          path: app/build/outputs/apk/release/app-release-signed.apk
+
+  create-release:
+    needs: [calculate-version, android-build-and-publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-signed-apk
+
       - name: Create Release
         uses: softprops/action-gh-release@v2.0.4
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Release v${{ steps.version.outputs.version }}
-          body: ${{ steps.version.outputs.changelog }}
+          tag_name: ${{ needs.calculate-version.outputs.version_tag }}
+          name: Release ${{ needs.calculate-version.outputs.version_tag }}
+          body: ${{ needs.calculate-version.outputs.changelog }}
           draft: false
           prerelease: false
-          files: app/build/outputs/apk/release/app-release-signed.apk
+          files: app-release-signed-apk/app-release-signed.apk # Path to the downloaded artifact
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
