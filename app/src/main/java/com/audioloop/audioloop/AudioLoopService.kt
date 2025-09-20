@@ -97,18 +97,18 @@ class AudioLoopService : Service() {
                 FloatingControlsService.ACTION_TOGGLE_MIC_MUTE -> {
                     val isMuted = intent.getBooleanExtra(FloatingControlsService.EXTRA_IS_MIC_MUTED, false)
                     isMicMuted = isMuted
-                    Log.d(TAG, "AudioLoopService: Mic mute toggled to $isMicMuted")
+                    Log.d(TAG, "AudioLoopService: Mic mute toggled to $isMuted")
                     // The mute logic will be applied in the audio processing thread
                 }
                 FloatingControlsService.ACTION_UPDATE_MIC_GAIN -> {
                     val gain = intent.getIntExtra(FloatingControlsService.EXTRA_MIC_GAIN_LEVEL, 0)
                     micGain = gain
-                    Log.d(TAG, "AudioLoopService: Mic gain updated to $micGain")
+                    Log.d(TAG, "AudioLoopService: Mic gain updated to $gain")
                 }
                 FloatingControlsService.ACTION_UPDATE_APP_AUDIO_GAIN -> {
                     val gain = intent.getIntExtra(FloatingControlsService.EXTRA_APP_AUDIO_GAIN_LEVEL, 0)
                     appAudioGain = gain
-                    Log.d(TAG, "AudioLoopService: App audio gain updated to $appAudioGain")
+                    Log.d(TAG, "AudioLoopService: App audio gain updated to $gain")
                 }
             }
         }
@@ -132,7 +132,11 @@ class AudioLoopService : Service() {
             addAction(FloatingControlsService.ACTION_UPDATE_MIC_GAIN)
             addAction(FloatingControlsService.ACTION_UPDATE_APP_AUDIO_GAIN)
         }
-        registerReceiver(controlReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(controlReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(controlReceiver, filter)
+        }
     }
 
     private fun setupAudioFocusListener() {

@@ -176,7 +176,11 @@ class FloatingControlsService : Service() {
             addAction(ACTION_UPDATE_STATE)
             addAction(ACTION_TOGGLE_MIC_MUTE)
         }
-        registerReceiver(stateUpdateReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            registerReceiver(stateUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(stateUpdateReceiver, filter)
+        }
 
         setupTouchListener()
         updateUIForServiceState()
