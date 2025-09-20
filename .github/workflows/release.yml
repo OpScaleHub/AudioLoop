@@ -22,9 +22,8 @@ jobs:
         id: semver
         uses: paulhatch/semantic-version@v5.4.0
         with:
-          format: '{{major}}.{{minor}}.{{patch}}'
+          version_format: '{{major}}.{{minor}}.{{patch}}'
           tag_prefix: 'v'
-          github_token: ${{ secrets.GITHUB_TOKEN }}
 
   android-build-and-publish:
     needs: calculate-version
