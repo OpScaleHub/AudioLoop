@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Required for semantic-version to analyze history
-          
+
       - name: Calculate next semantic version
         id: semver
         uses: paulhatch/semantic-version@v5.4.0
@@ -43,13 +43,12 @@ jobs:
           major_pattern: "BREAKING CHANGE:"
           minor_pattern: "feat:"
           search_commit_body: true
-          initial_version: '0.1.0' # Added this line to ensure a base version is always available
 
       - name: Debug Semantic Version Output
         run: |
           echo "Semantic Version Output - Version: ${{ steps.semver.outputs.version }}"
           echo "Semantic Version Output - Version Tag: ${{ steps.semver.outputs.version_tag }}"
-          
+
       - name: Calculate Android version code
         id: version_code
         run: |
@@ -109,7 +108,7 @@ jobs:
       - name: Sign the APK
         if: ${{ env.DECODE_KEYSTORE_ENABLED == 'true' }}
         run: |
-          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build[...]\\\
+          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build/outputs/apk/release/app-release-unsigned.apk ${{ secrets.SIGNING_KEY_ALIAS }}
           zipalign -v 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-signed.apk
 
       - name: Upload APK artifact
