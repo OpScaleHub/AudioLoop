@@ -57,6 +57,9 @@ jobs:
   android-build-and-publish:
     needs: calculate-version
     runs-on: ubuntu-latest
+    env: # Set environment variables for version and version code
+      VERSION_NAME_ENV: ${{ needs.calculate-version.outputs.version }}
+      VERSION_CODE_ENV: ${{ needs.calculate-version.outputs.version_code }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -88,12 +91,12 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build release APK
-        run: ./gradlew assembleRelease -PVERSION_NAME=${{ needs.calculate-version.outputs.version }} -PVERSION_CODE=${{ needs.calculate-version.outputs.version_code }}
+        run: ./gradlew assembleRelease -PVERSION_NAME=$VERSION_NAME_ENV -PVERSION_CODE=$VERSION_CODE_ENV
 
       - name: Sign the APK
         if: ${{ env.DECODE_KEYSTORE_ENABLED == 'true' }}
         run: |
-          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build[...]\
+          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build[...]\\\
           zipalign -v 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-signed.apk
 
       - name: Upload APK artifact
