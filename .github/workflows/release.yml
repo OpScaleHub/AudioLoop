@@ -43,6 +43,7 @@ jobs:
           major_pattern: "BREAKING CHANGE:"
           minor_pattern: "feat:"
           search_commit_body: true
+          initial_version: '0.1.0' # Added this line to ensure a base version is always available
           
       - name: Calculate Android version code
         id: version_code
