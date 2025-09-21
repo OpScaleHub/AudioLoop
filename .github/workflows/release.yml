@@ -98,6 +98,56 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+        env:
+          VERSION_NAME: ${{ env.VERSION_NAME_ENV }}
+          VERSION_CODE: ${{ env.VERSION_CODE_ENV }}
+
+      - name: Sign Android Release
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Rename signed APK
+        run: |
+          mv ${{steps.sign_app.outputs.signedReleaseFile}} app/build/outputs/apk/release/audioloop-${{ env.VERSION_NAME_ENV }}.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: app/build/outputs/apk/release/audioloop-${{ env.VERSION_NAME_ENV }}.apk
+          tag_name: ${{ needs.calculate-version.outputs.version_tag }}
+          name: Release ${{ env.VERSION_NAME_ENV }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true
+
       - name: Install Android SDK Build-Tools
         run: |
           # Define ANDROID_HOME as GitHub Actions doesn't always set it correctly
