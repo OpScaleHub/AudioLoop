@@ -25,9 +25,9 @@ jobs:
   calculate-version:
     runs-on: ubuntu-latest
     outputs:
-      version_tag: ${{ steps.semver.outputs.version_tag }}
-      version: ${{ steps.semver.outputs.version }}
-      version_code: ${{ steps.version_code.outputs.code }}
+      version_tag: ${{ steps.set_versions.outputs.version_tag }}
+      version: ${{ steps.set_versions.outputs.version }}
+      version_code: ${{ steps.set_versions.outputs.version_code }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,27 +44,43 @@ jobs:
           minor_pattern: "feat:"
           search_commit_body: true
 
-      - name: Debug Semantic Version Output
+      - name: Debug Semantic Version Output (Raw)
         run: |
-          echo "Semantic Version Output - Version: ${{ steps.semver.outputs.version }}"
-          echo "Semantic Version Output - Version Tag: ${{ steps.semver.outputs.version_tag }}"
+          echo "Raw Semantic Version Output - Version: ${{ steps.semver.outputs.version }}"
+          echo "Raw Semantic Version Output - Version Tag: ${{ steps.semver.outputs.version_tag }}"
 
-      - name: Calculate Android version code
-        id: version_code
+      - name: Set Final Version Outputs
+        id: set_versions
         run: |
-          VERSION_STRING="${{ steps.semver.outputs.version }}"
-          # Fallback if semantic version action outputs a placeholder
-          if [[ "$VERSION_STRING" == *"{{major}}"* ]]; then
+          RAW_VERSION="${{ steps.semver.outputs.version }}"
+          RAW_VERSION_TAG="${{ steps.semver.outputs.version_tag }}"
+
+          ACTUAL_VERSION=""
+          ACTUAL_VERSION_TAG=""
+
+          # Check if semantic version action output contains placeholders, if so, fallback
+          if [[ "$RAW_VERSION" == *"{{major}}"* ]]; then
             echo "Semantic version output contains placeholders. Falling back to 0.1.0."
-            VERSION_STRING="0.1.0"
+            ACTUAL_VERSION="0.1.0"
+            ACTUAL_VERSION_TAG="v0.1.0"
+          else
+            ACTUAL_VERSION="$RAW_VERSION"
+            ACTUAL_VERSION_TAG="$RAW_VERSION_TAG"
           fi
 
-          # Extract major, minor, patch from version
-          IFS='.' read -r major minor patch <<< "$VERSION_STRING"
+          # Extract major, minor, patch from the actual version
+          IFS='.' read -r major minor patch <<< "$ACTUAL_VERSION"
           # Calculate version code: major * 10000 + minor * 100 + patch
           version_code=$((major * 10000 + minor * 100 + patch))
-          echo "Calculated version code: $version_code"
-          echo "code=$version_code" >> $GITHUB_OUTPUT
+          
+          echo "Final Determined Version: $ACTUAL_VERSION"
+          echo "Final Determined Version Tag: $ACTUAL_VERSION_TAG"
+          echo "Calculated Version Code: $version_code"
+
+          # Set job outputs for consumption by other jobs
+          echo "version=$ACTUAL_VERSION" >> $GITHUB_OUTPUT
+          echo "version_tag=$ACTUAL_VERSION_TAG" >> $GITHUB_OUTPUT
+          echo "version_code=$version_code" >> $GITHUB_OUTPUT
 
   android-build-and-publish:
     needs: calculate-version
@@ -105,17 +121,36 @@ jobs:
       - name: Build release APK
         run: ./gradlew assembleRelease -PVERSION_NAME=$VERSION_NAME_ENV -PVERSION_CODE=$VERSION_CODE_ENV
 
-      - name: Sign the APK
-        if: ${{ env.DECODE_KEYSTORE_ENABLED == 'true' }}
+      - name: Process APK (Sign and/or Zipalign)
         run: |
-          jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass ${{ secrets.SIGNING_STORE_PASSWORD }} -keypass ${{ secrets.SIGNING_KEY_PASSWORD }} app/build/outputs/apk/release/app-release-unsigned.apk ${{ secrets.SIGNING_KEY_ALIAS }}
-          zipalign -v 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-signed.apk
+          UNSIGNED_APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
+          FINAL_APK_PATH="app/build/outputs/apk/release/app-release-final.apk"
 
-      - name: Upload APK artifact
+          if [[ "${{ env.DECODE_KEYSTORE_ENABLED }}" == "true" ]]; then
+            echo "Signing APK..."
+            jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore app/keystore.jks -storepass "${{ secrets.SIGNING_STORE_PASSWORD }}" -keypass "${{ secrets.SIGNING_KEY_PASSWORD }}" "$UNSIGNED_APK_PATH" "${{ secrets.SIGNING_KEY_ALIAS }}"
+          
+            echo "Zipaligning signed APK..."
+            zipalign -v 4 "$UNSIGNED_APK_PATH" "$FINAL_APK_PATH"
+            echo "Signed and zipaligned APK created at $FINAL_APK_PATH"
+          else
+            echo "Signing secrets not provided. Using unsigned APK."
+            if [ -f "$UNSIGNED_APK_PATH" ]; then
+              echo "Zipaligning unsigned APK..."
+              zipalign -v 4 "$UNSIGNED_APK_PATH" "$FINAL_APK_PATH"
+              echo "Unsigned and zipaligned APK created at $FINAL_APK_PATH"
+            else
+              echo "Error: Unsigned APK not found at $UNSIGNED_APK_PATH after build."
+              exit 1 # Fail the step if build artifact is missing
+            fi
+          fi
+
+      - name: Upload Final APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-signed-apk
-          path: app/build/outputs/apk/release/app-release-signed.apk
+          name: app-release-apk # Consistent artifact name
+          path: app/build/outputs/apk/release/app-release-final.apk
+          if-no-files-found: error # Ensure pipeline fails if no APK is produced
 
   create-release:
     needs: [calculate-version, android-build-and-publish]
@@ -126,7 +161,7 @@ jobs:
       - name: Download APK artifact
         uses: actions/download-artifact@v4
         with:
-          name: app-release-signed-apk
+          name: app-release-apk # Download the consistently named artifact
 
       - name: Generate Release Notes
         id: release_notes
@@ -147,6 +182,6 @@ jobs:
           body: ${{ env.RELEASE_NOTES }}
           draft: false
           prerelease: false
-          files: app-release-signed-apk/app-release-signed.apk
+          files: app-release-apk/app-release-final.apk # Attach the consistently named APK
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
