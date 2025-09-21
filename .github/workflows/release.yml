@@ -98,6 +98,32 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Install Android SDK Build-Tools
+        run: |
+          # Define ANDROID_HOME as GitHub Actions doesn't always set it correctly
+          export ANDROID_HOME=$HOME/Android/sdk
+          mkdir -p $ANDROID_HOME
+
+          # Install command-line tools for Android SDK
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O android-cmdline-tools.zip
+          unzip -q android-cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools"
+          rm android-cmdline-tools.zip
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+
+          # Set up PATH for sdkmanager and other tools
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+
+          # Accept Android SDK licenses (important!)
+          yes | sdkmanager --licenses || true # '|| true' to prevent failure if no licenses need accepting
+
+          # Install a specific version of build-tools (e.g., 34.0.0, adjust if needed) and platforms (e.g., android-34)
+          sdkmanager "build-tools;34.0.0" "platforms;android-34"
+          # Add build-tools to PATH
+          export PATH=$PATH:$ANDROID_HOME/build-tools/34.0.0
+
+          # Verify zipalign is now available
+          which zipalign
+
       - name: Check for signing keystore secret
         id: check_keystore_secret
         run: |
