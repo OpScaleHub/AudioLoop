@@ -4,15 +4,20 @@ plugins {
 }
 
 android {
-    namespace = "com.audioloop.audioloop" // Assuming this is your namespace
+    namespace = "com.audioloop.audioloop"
     compileSdk = 34
 
     defaultConfig {
         applicationId = "com.audioloop.audioloop"
         minSdk = 31
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+
+        // Read version from project properties passed by GitHub Actions
+        val versionName: String = project.findProperty("VERSION_NAME") as String? ?: "1.0"
+        val versionCode: Int = (project.findProperty("VERSION_CODE") as String?)?.toInt() ?: 1
+
+        this.versionCode = versionCode
+        this.versionName = versionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -30,28 +35,22 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8 // Or JavaVersion.VERSION_17 if you configure your project for it
-        targetCompatibility = JavaVersion.VERSION_1_8 // Or JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
     kotlinOptions {
-        jvmTarget = "1.8" // Or "17"
+        jvmTarget = "1.8"
     }
     buildFeatures {
-        viewBinding = true // If you use ViewBinding
-        // compose = true // If you use Jetpack Compose
+        viewBinding = true
     }
-    // packagingOptions { // Only if you have issues with duplicate files from libraries
-    //     resources {
-    //         excludes += "/META-INF/{AL2.0,LGPL2.1}"
-    //     }
-    // }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4") // If you use ConstraintLayout
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     // Hilt for Dependency Injection
 
