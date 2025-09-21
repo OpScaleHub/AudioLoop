@@ -104,17 +104,6 @@ jobs:
           export ANDROID_HOME=$HOME/Android/sdk
           mkdir -p $ANDROID_HOME
 
-          # Create licenses directory and accept licenses programmatically
-          mkdir -p $ANDROID_HOME/licenses
-          echo "8933cc433bd4ae4c159f2a955ff9a1672b9b118" > $ANDROID_HOME/licenses/android-sdk-license
-          echo "84831b69689e956a9eb9d532aa549d65c6b89932" > $ANDROID_HOME/licenses/android-sdk-preview-license
-          echo "50466763139cbef88ac16c738be78e03be508b54" > $ANDROID_HOME/licenses/android-googletv-license
-          echo "d56f5187479451eabf01fdc167a5defb06a443a7" > $ANDROID_HOME/licenses/android-sdk-arm-dbt-license
-          echo "33777fd66d2146f8496923f173f4eac5c9f565fd" > $ANDROID_HOME/licenses/google-gdk-license
-          # The following are often included for completeness, even if not strictly needed by sdkmanager --licenses
-          echo "84831b69689e956a9eb9d532aa549d65c6b89932" > $ANDROID_HOME/licenses/mips-android-sysimage-license
-          echo "84831b69689e956a9eb9d532aa549d65c6b89932" > $ANDROID_HOME/licenses/android-googlexr-license
-          
           # Install command-line tools for Android SDK
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O android-cmdline-tools.zip
           unzip -q android-cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools"
@@ -124,8 +113,16 @@ jobs:
           # Set up PATH for sdkmanager and other tools
           export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 
+          # Create licenses directory and programmatically accept ONLY ESSENTIAL licenses
+          mkdir -p $ANDROID_HOME/licenses
+          # Standard Android SDK License (essential for platforms and build-tools)
+          echo "8933cc433bd4ae4c159f2a955ff9a1672b9b118" > $ANDROID_HOME/licenses/android-sdk-license
+          # Android SDK Preview License (often needed even for stable releases due to dependency chains)
+          echo "84831b69689e956a9eb9d532aa549d65c6b89932" > $ANDROID_HOME/licenses/android-sdk-preview-license
+          
           # Install a specific version of build-tools (e.g., 34.0.0) and platforms (e.g., android-34)
-          sdkmanager "build-tools;34.0.0" "platforms;android-34"
+          # Explicitly set --sdk_root to ensure sdkmanager finds the licenses
+          sdkmanager --sdk_root="$ANDROID_HOME" "build-tools;34.0.0" "platforms;android-34"
 
           # Add build-tools to PATH permanently for this step
           export PATH=$PATH:$ANDROID_HOME/build-tools/34.0.0
