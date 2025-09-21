@@ -44,14 +44,27 @@ jobs:
           minor_pattern: "feat:"
           search_commit_body: true
           initial_version: '0.1.0' # Added this line to ensure a base version is always available
+
+      - name: Debug Semantic Version Output
+        run: |
+          echo "Semantic Version Output - Version: ${{ steps.semver.outputs.version }}"
+          echo "Semantic Version Output - Version Tag: ${{ steps.semver.outputs.version_tag }}"
           
       - name: Calculate Android version code
         id: version_code
         run: |
+          VERSION_STRING="${{ steps.semver.outputs.version }}"
+          # Fallback if semantic version action outputs a placeholder
+          if [[ "$VERSION_STRING" == *"{{major}}"* ]]; then
+            echo "Semantic version output contains placeholders. Falling back to 0.1.0."
+            VERSION_STRING="0.1.0"
+          fi
+
           # Extract major, minor, patch from version
-          IFS='.' read -r major minor patch <<< "${{ steps.semver.outputs.version }}"
+          IFS='.' read -r major minor patch <<< "$VERSION_STRING"
           # Calculate version code: major * 10000 + minor * 100 + patch
           version_code=$((major * 10000 + minor * 100 + patch))
+          echo "Calculated version code: $version_code"
           echo "code=$version_code" >> $GITHUB_OUTPUT
 
   android-build-and-publish:
